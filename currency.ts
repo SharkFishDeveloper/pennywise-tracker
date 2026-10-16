@@ -1,0 +1,27 @@
+export const CURRENCY = {
+  USD: { name: "US Dollar", symbol: "$" },
+  INR: { name: "Indian Rupee", symbol: "₹" },
+  EUR: { name: "Euro", symbol: "€" },
+  GBP: { name: "British Pound", symbol: "£" },
+  JPY: { name: "Japanese Yen", symbol: "¥" },
+  CNY: { name: "Chinese Yuan", symbol: "¥" },
+  CHF: { name: "Swiss Franc", symbol: "CHF" },
+  AED: { name: "UAE Dirham", symbol: "د.إ" },
+  SAR: { name: "Saudi Riyal", symbol: "﷼" },
+  CAD: { name: "Canadian Dollar", symbol: "CA$" },
+  AUD: { name: "Australian Dollar", symbol: "A$" },
+  SGD: { name: "Singapore Dollar", symbol: "S$" },
+  NZD: { name: "New Zealand Dollar", symbol: "NZ$" },
+  BDT: { name: "Bangladeshi Taka", symbol: "৳" },
+  PKR: { name: "Pakistani Rupee", symbol: "₨" },
+  LKR: { name: "Sri Lankan Rupee", symbol: "Rs" },
+  NPR: { name: "Nepalese Rupee", symbol: "रु" },
+  RUB: { name: "Russian Ruble", symbol: "₽" },
+  KRW: { name: "South Korean Won", symbol: "₩" },
+  BRL: { name: "Brazilian Real", symbol: "R$" },
+  MXN: { name: "Mexican Peso", symbol: "MX$" },
+  ZAR: { name: "South African Rand", symbol: "R" },
+  TRY: { name: "Turkish Lira", symbol: "₺" },
+} as const;
+
+export type CurrencyCode = keyof typeof CURRENCY;
