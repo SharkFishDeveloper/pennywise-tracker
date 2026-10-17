@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
@@ -18,6 +18,16 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "PennyWise",
   description: "Track your income, expenses, accounts and budgets.",
+  applicationName: "PennyWise",
+  appleWebApp: {
+    capable: true,
+    title: "PennyWise",
+    statusBarStyle: "default",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#2563eb",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -27,7 +37,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-dvh flex-col bg-white text-gray-900">
-        {/* <Navbar/> */}
+        <Navbar />
         <RecurrenceSync />
         <main className="mx-auto w-full max-w-5xl flex-1">{children}</main>
         <Footer />
