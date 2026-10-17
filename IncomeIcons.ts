@@ -25,6 +25,7 @@ import {
   RotateCcw,
   Package,
   BanknoteArrowUp,
+  Ellipsis,
   type LucideIcon,
 } from "lucide-react";
 
@@ -76,6 +77,7 @@ export const INCOME_ICONS = {
   RotateCcw,
   Package,
   BanknoteArrowUp,
+  Ellipsis,
 } satisfies Record<string, LucideIcon>;
 
 export type IncomeIconName = keyof typeof INCOME_ICONS;

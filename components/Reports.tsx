@@ -6,9 +6,10 @@ import { AVAILABLE_ICONS } from "@/ExpenseIcons";
 import { computeForecast } from "@/forecast";
 import { INCOME_ICONS } from "@/IncomeIcons";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Plus, X } from "lucide-react";
+import { Plus, X, MoreVertical, FileUp, Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import Forecast from "@/components/Forecast";
+import ImportExport from "@/components/ImportExport";
 import Transaction from "@/components/Transaction";
 
 type Filter = "All" | "Expense" | "Income" | "Estimate";
@@ -61,6 +62,8 @@ const Reports = () => {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ReportRow | null>(null);
   const [now, setNow] = useState<Date | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
     setNow(new Date());
@@ -123,10 +126,49 @@ const Reports = () => {
 
   return (
     <div className="relative mx-auto min-h-[70vh] w-full max-w-3xl px-4 pb-32 pt-6 sm:px-6">
-      <h1 className="text-2xl font-bold">Records</h1>
-      <p className="mt-1 text-sm text-gray-500">
-        All your income and expenses in one place.
-      </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Records</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            All your income and expenses in one place.
+          </p>
+        </div>
+
+        <div className="relative">
+          {menuOpen && (
+            <button
+              type="button"
+              aria-label="Close menu"
+              onClick={() => setMenuOpen(false)}
+              className="fixed inset-0 z-40 cursor-default"
+            />
+          )}
+
+          <button
+            type="button"
+            onClick={() => setMenuOpen((value) => !value)}
+            aria-label="More options"
+            className="relative z-50 rounded-full p-2 text-gray-600 transition hover:bg-gray-100"
+          >
+            <MoreVertical size={22} />
+          </button>
+
+          {menuOpen && (
+            <div className="absolute right-0 z-50 mt-2 w-52 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setImportOpen(true);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-gray-50"
+              >
+                <FileUp size={16} /> Import / Export CSV
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="mt-5 grid grid-cols-4 gap-2 rounded-2xl bg-gray-100 p-1 mb-2">
         {filters.map((item) => (
@@ -286,6 +328,8 @@ const Reports = () => {
           </div>
         </div>
       )}
+
+      <ImportExport open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
   );
 };

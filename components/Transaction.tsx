@@ -6,7 +6,7 @@ import { INCOME_ICONS } from "@/IncomeIcons";
 import { AVAILABLE_ICONS } from "@/ExpenseIcons";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Trash2 } from "lucide-react";
 
 export type EditableTransaction = {
   id: number;
@@ -187,6 +187,30 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
     } catch (error) {
       console.error("Failed to save transaction:", error);
       setMessage("Could not save transaction. Please try again.");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!transaction) return;
+    if (
+      !window.confirm(
+        `Delete this ${transaction.type.toLowerCase()}? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      if (transaction.type === "Expense") {
+        await db.expenses.delete(transaction.id);
+      } else {
+        await db.incomes.delete(transaction.id);
+      }
+
+      if (onSaved) onSaved();
+    } catch (error) {
+      console.error("Failed to delete transaction:", error);
+      setMessage("Could not delete transaction. Please try again.");
     }
   };
 
@@ -442,6 +466,16 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
       >
         {isEditing ? "Save changes" : `Save ${transacType}`}
       </button>
+
+      {isEditing && (
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 p-3 font-semibold text-red-600 transition hover:bg-red-50"
+        >
+          <Trash2 size={18} /> Delete {transacType.toLowerCase()}
+        </button>
+      )}
     </div>
   );
 };

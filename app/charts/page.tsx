@@ -161,6 +161,37 @@ const Charts = () => {
   const activePoint =
     selectedPoint !== null ? linePoints[selectedPoint] ?? null : null;
 
+  const dayBreakdown = (() => {
+    if (!activePoint) return [];
+
+    const totals = new Map<string, number>();
+
+    rows
+      .filter((row) => row.date === activePoint.date)
+      .forEach((row) => {
+        const name =
+          mode === "Expense"
+            ? categories.find((item) => item.id === row.categoryId)?.name ??
+              "Uncategorized"
+            : row.account
+              ? accounts.find((item) => String(item.id) === row.account)?.name ??
+                "Unknown account"
+              : "Unknown account";
+
+        totals.set(name, (totals.get(name) ?? 0) + row.amount);
+      });
+
+    const dayTotal = activePoint.value || 1;
+
+    return [...totals.entries()]
+      .map(([name, value]) => ({
+        name,
+        value,
+        pct: (value / dayTotal) * 100,
+      }))
+      .sort((a, b) => b.value - a.value);
+  })();
+
   const groupTitle = mode === "Expense" ? "category" : "account";
 
   return (
@@ -318,32 +349,67 @@ const Charts = () => {
               />
 
               {activePoint && (
-                <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-gray-900">
+                <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="min-w-0 truncate text-sm font-semibold text-gray-900">
                       {fullDate(activePoint.date)}
                     </p>
-                    <p className="text-xs text-gray-500">
-                      {mode === "Expense" ? "Total spent" : "Total received"}:{" "}
-                      <span
-                        className={`font-semibold ${
-                          mode === "Expense"
-                            ? "text-red-600"
-                            : "text-green-600"
-                        }`}
-                      >
-                        {symbol}
-                        {activePoint.value.toLocaleString()}
-                      </span>
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPoint(null)}
+                      className="shrink-0 text-xs font-medium text-gray-500 hover:text-gray-800"
+                    >
+                      Clear
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPoint(null)}
-                    className="shrink-0 text-xs font-medium text-gray-500 hover:text-gray-800"
-                  >
-                    Clear
-                  </button>
+
+                  <p className="mt-1 text-xs text-gray-500">
+                    {mode === "Expense" ? "Total spent" : "Total received"}:{" "}
+                    <span
+                      className={`font-semibold ${
+                        mode === "Expense" ? "text-red-600" : "text-green-600"
+                      }`}
+                    >
+                      {symbol}
+                      {activePoint.value.toLocaleString()}
+                    </span>
+                  </p>
+
+                  {dayBreakdown.length > 0 && (
+                    <ul className="mt-3 space-y-1.5 border-t border-gray-200 pt-3">
+                      {dayBreakdown.map((item) => {
+                        const pctLabel =
+                          item.pct >= 1
+                            ? `${Math.round(item.pct)}%`
+                            : `${item.pct.toFixed(1)}%`;
+                        const DayIcon = iconMap[item.name];
+
+                        return (
+                          <li
+                            key={item.name}
+                            className="flex items-center gap-2 text-sm"
+                          >
+                            {DayIcon && (
+                              <DayIcon
+                                size={15}
+                                className="shrink-0 text-gray-400"
+                              />
+                            )}
+                            <span className="min-w-0 flex-1 truncate text-gray-700">
+                              {item.name}
+                            </span>
+                            <span className="shrink-0 text-xs text-gray-500">
+                              {pctLabel}
+                            </span>
+                            <span className="w-20 shrink-0 text-right font-medium text-gray-900">
+                              {symbol}
+                              {item.value.toLocaleString()}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </div>
               )}
             </Card>
