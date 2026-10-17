@@ -55,6 +55,7 @@ const Reports = () => {
   const incomes = useLiveQuery(() => db.incomes.toArray(), []);
   const categories = useLiveQuery(() => db.categories.toArray(), []);
   const accounts = useLiveQuery(() => db.accounts.toArray(), []);
+  const recurrences = useLiveQuery(() => db.recurrences.toArray(), []);
 
   const [filter, setFilter] = useState<Filter>("All");
   const [editorOpen, setEditorOpen] = useState(false);
@@ -65,7 +66,7 @@ const Reports = () => {
     setNow(new Date());
   }, []);
 
-  if (!expenses || !incomes || !categories || !accounts) {
+  if (!expenses || !incomes || !categories || !accounts || !recurrences) {
     return <p className="p-6 text-gray-500">Loading your records...</p>;
   }
 
@@ -116,7 +117,9 @@ const Reports = () => {
   );
 
   const forecast =
-    filter === "Estimate" && now ? computeForecast(expenses, now) : null;
+    filter === "Estimate" && now
+      ? computeForecast(expenses, recurrences, now)
+      : null;
 
   return (
     <div className="relative mx-auto min-h-[70vh] w-full max-w-3xl px-4 pb-32 pt-6 sm:px-6">

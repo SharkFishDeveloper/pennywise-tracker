@@ -1,9 +1,12 @@
 import type { CurrencyCode } from "./currency";
-import type { Expense } from "./db";
+import type { Expense, Recurrence } from "./db";
+import { countOccurrences, toYMD } from "./recurrence";
 
 export type RecurringForecast = {
   categoryId: number;
-  monthly: number;
+  amount: number;
+  occurrences: number;
+  remaining: number;
   paid: boolean;
   paidAmount: number;
 };
@@ -46,6 +49,7 @@ const dominantCurrency = (expenses: Expense[]): CurrencyCode => {
 
 export const computeForecast = (
   expenses: Expense[],
+  recurrences: Recurrence[],
   now: Date
 ): Forecast => {
   const currency = dominantCurrency(expenses);
@@ -53,9 +57,12 @@ export const computeForecast = (
   const year = now.getFullYear();
   const month0 = now.getMonth();
   const currentKey = `${year}-${pad(month0 + 1)}`;
+  const monthStart = `${currentKey}-01`;
   const daysThisMonth = daysInMonth(year, month0);
   const daysElapsed = now.getDate();
   const daysRemaining = Math.max(daysThisMonth - daysElapsed, 0);
+  const monthEnd = toYMD(new Date(year, month0 + 1, 0));
+  const tomorrow = toYMD(new Date(year, month0, daysElapsed + 1));
 
   const byMonth = new Map<string, Expense[]>();
   expenses.forEach((item) => {
@@ -74,45 +81,34 @@ export const computeForecast = (
   const historyMonths = pastKeys.length;
   const pastDays = pastKeys.reduce((sum, key) => sum + monthKeyDays(key), 0);
 
-  const categoryMonths = new Map<number, Set<string>>();
-  expenses.forEach((item) => {
-    const set = categoryMonths.get(item.categoryId) ?? new Set<string>();
-    set.add(monthKey(item.date));
-    categoryMonths.set(item.categoryId, set);
-  });
+  // Fixed bills come from the schedules the user set up on categories.
+  const activeRecurrences = recurrences.filter(
+    (rec) => rec.active && rec.endDate >= monthStart
+  );
+  const recurringIds = new Set(
+    activeRecurrences.map((rec) => rec.categoryId)
+  );
 
-  const recurringIds = new Set<number>();
-  categoryMonths.forEach((months, id) => {
-    if (months.size >= 2) recurringIds.add(id);
-  });
-
-  const pastMonthlyTotals = (id: number) =>
-    pastKeys
-      .map((key) =>
-        (byMonth.get(key) ?? [])
-          .filter((item) => item.categoryId === id)
-          .reduce((sum, item) => sum + item.amount, 0)
-      )
-      .filter((total) => total > 0);
-
-  const recurring: RecurringForecast[] = [...recurringIds].map((id) => {
-    const paidAmount = current
-      .filter((item) => item.categoryId === id)
+  const paidThisMonth = (categoryId: number) =>
+    current
+      .filter((item) => item.categoryId === categoryId)
       .reduce((sum, item) => sum + item.amount, 0);
-    const totals = pastMonthlyTotals(id);
-    const monthly =
-      totals.length > 0
-        ? totals.reduce((a, b) => a + b, 0) / totals.length
-        : paidAmount;
+
+  const recurring: RecurringForecast[] = activeRecurrences.map((rec) => {
+    const occurrences = countOccurrences(rec, tomorrow, monthEnd);
+    const paidAmount = paidThisMonth(rec.categoryId);
 
     return {
-      categoryId: id,
-      monthly,
+      categoryId: rec.categoryId,
+      amount: rec.amount,
+      occurrences,
+      remaining: occurrences * rec.amount,
       paid: paidAmount > 0,
       paidAmount,
     };
   });
 
+  // Everything that is not a fixed bill contributes to the daily average.
   const pastDiscretionary = pastKeys.reduce(
     (sum, key) =>
       sum +
@@ -134,9 +130,10 @@ export const computeForecast = (
         : 0;
 
   const predictedDiscretionary = dailyRate * daysRemaining;
-  const predictedRecurring = recurring
-    .filter((item) => !item.paid)
-    .reduce((sum, item) => sum + item.monthly, 0);
+  const predictedRecurring = recurring.reduce(
+    (sum, item) => sum + item.remaining,
+    0
+  );
   const predictedRemaining = predictedDiscretionary + predictedRecurring;
 
   return {

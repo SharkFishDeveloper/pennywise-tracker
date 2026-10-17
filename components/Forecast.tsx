@@ -121,8 +121,11 @@ const Forecast = ({
                       {name}
                     </p>
                     <p className="text-xs text-gray-500">
-                      ~{symbol}
-                      {round(item.monthly)} / month
+                      {symbol}
+                      {round(item.amount)} each
+                      {item.occurrences > 0
+                        ? ` · ${item.occurrences} left`
+                        : ""}
                     </p>
                   </div>
 
@@ -141,8 +144,9 @@ const Forecast = ({
           </ul>
 
           <p className="mt-3 text-xs text-gray-500">
-            Recurring bills are counted once. Unpaid ones are added to the
-            prediction, paid ones are left out to avoid double-counting.
+            Fixed bills use your category schedules. Bills already logged this
+            month are not counted again, and upcoming ones are added to the
+            prediction.
           </p>
         </section>
       )}

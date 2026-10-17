@@ -1,4 +1,4 @@
-import { db, type RecurrenceDuration } from "@/db";
+import { db, type Recurrence, type RecurrenceDuration } from "@/db";
 
 export const RECURRENCE_DURATIONS: RecurrenceDuration[] = [
   "1 week",
@@ -58,6 +58,27 @@ export const durationEndDate = (
   }
 
   return toYMD(date);
+};
+
+export const countOccurrences = (
+  recurrence: Pick<Recurrence, "daysOfWeek" | "startDate" | "endDate">,
+  from: string,
+  to: string
+) => {
+  const start = from > recurrence.startDate ? from : recurrence.startDate;
+  const end = to < recurrence.endDate ? to : recurrence.endDate;
+
+  let count = 0;
+  let cursor = start;
+
+  while (cursor <= end) {
+    if (recurrence.daysOfWeek.includes(dayOfWeek(cursor))) {
+      count += 1;
+    }
+    cursor = nextDay(cursor);
+  }
+
+  return count;
 };
 
 export const syncRecurrences = async (): Promise<number> => {
