@@ -218,11 +218,11 @@ const Reports = () => {
                     {formatMonth(month)}
                   </h2>
                   <span
-                    className={`text-xs font-semibold ${
+                    className={`text-xl font-semibold ${
                       net >= 0 ? "text-green-600" : "text-red-600"
                     }`}
                   >
-                    {symbol}
+                    {symbol} 
                     {net < 0 ? "-" : "+"}
                     {Math.abs(net).toLocaleString()}
                   </span>
