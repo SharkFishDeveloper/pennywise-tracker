@@ -418,7 +418,7 @@ const ImportExport = ({
     const right = doc.width - doc.margin;
 
     doc.text("PennyWise Report", { size: 20, bold: true });
-    doc.gap(6);
+    doc.gap(20);
     doc.text(`Generated ${generated}`, { size: 10, color: GRAY_PDF });
     doc.gap(24);
 
