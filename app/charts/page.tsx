@@ -9,6 +9,7 @@ import type { LucideIcon } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import PieChart, { PIE_COLORS } from "@/components/charts/PieChart";
 import LineChart from "@/components/charts/LineChart";
+import BarChart from "@/components/charts/BarChart";
 
 type Mode = "Expense" | "Income";
 type Range = "all" | "month" | "15days" | "week";
@@ -64,6 +65,7 @@ const MAX_DATES = 16;
 const Charts = () => {
   const [mode, setMode] = useState<Mode>("Expense");
   const [range, setRange] = useState<Range>("all");
+  const [group, setGroup] = useState<string>("all");
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<number | null>(null);
 
@@ -132,6 +134,47 @@ const Charts = () => {
       };
     }, [rows, categories, accounts, mode]);
 
+  const groupNames = slices.map((slice) => slice.name);
+  const activeGroup =
+    group !== "all" && groupNames.includes(group) ? group : "all";
+
+  const barPoints = useMemo(() => {
+    if (activeGroup === "all") return [];
+
+    const dailyTotals = new Map<string, number>();
+    const allDates = new Set<string>();
+
+    rows.forEach((row) => {
+      allDates.add(row.date);
+
+      const name =
+        mode === "Expense"
+          ? (categories?.find((item) => item.id === row.categoryId)?.name ??
+            "Uncategorized")
+          : row.account
+            ? (accounts?.find((item) => String(item.id) === row.account)?.name ??
+              "Unknown account")
+            : "Unknown account";
+
+      if (name !== activeGroup) return;
+
+      dailyTotals.set(row.date, (dailyTotals.get(row.date) ?? 0) + row.amount);
+    });
+
+    const dateKeys = [...allDates].sort().slice(-MAX_DATES);
+
+    return dateKeys.map((date) => ({
+      label: shortDate(date),
+      value: dailyTotals.get(date) ?? 0,
+      date,
+    }));
+  }, [rows, categories, accounts, mode, activeGroup]);
+
+  const barTotal = barPoints.reduce((sum, point) => sum + point.value, 0);
+
+  const barColor =
+    slices.find((slice) => slice.name === activeGroup)?.color ?? lineColor;
+
   if (!expenses || !incomes || !categories || !accounts) {
     return <p className="p-6 text-gray-500">Loading charts...</p>;
   }
@@ -149,6 +192,7 @@ const Charts = () => {
 
   const changeMode = (value: Mode) => {
     setMode(value);
+    setGroup("all");
     setSelected(null);
     setSelectedPoint(null);
   };
@@ -239,6 +283,31 @@ const Charts = () => {
         ))}
       </div>
 
+      {slices.length > 0 && (
+        <label className="mt-3 flex items-center gap-2 text-sm font-medium text-gray-600">
+          <span className="shrink-0">
+            {mode === "Expense" ? "Category" : "Account"}
+          </span>
+          <select
+            value={activeGroup}
+            onChange={(e) => {
+              setGroup(e.target.value);
+              setSelectedPoint(null);
+            }}
+            className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white p-2 text-sm font-medium text-gray-900 outline-none focus:border-blue-500"
+          >
+            <option value="all">
+              All {mode === "Expense" ? "categories" : "accounts"}
+            </option>
+            {slices.map((slice) => (
+              <option key={slice.name} value={slice.name}>
+                {slice.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       {slices.length === 0 ? (
         <div className="mt-8 flex min-h-64 flex-col items-center justify-center text-center">
           <h2 className="text-lg font-semibold">
@@ -252,25 +321,47 @@ const Charts = () => {
         </div>
       ) : (
         <div className="mt-6 space-y-5">
-          <Card
-            title={
-              mode === "Expense"
-                ? "Expenses by category"
-                : "Income by account"
-            }
-          >
-            <PieChart
-              data={slices}
-              total={total}
-              symbol={symbol}
-              centerLabel={centerLabel}
-              selected={selected}
-              onSelect={setSelected}
-              icons={iconMap}
-            />
-          </Card>
+          {activeGroup === "all" ? (
+            <Card
+              title={
+                mode === "Expense"
+                  ? "Expenses by category"
+                  : "Income by account"
+              }
+            >
+              <PieChart
+                data={slices}
+                total={total}
+                symbol={symbol}
+                centerLabel={centerLabel}
+                selected={selected}
+                onSelect={setSelected}
+                icons={iconMap}
+              />
+            </Card>
+          ) : (
+            <Card title={`${activeGroup} over time`}>
+              <BarChart
+                data={barPoints}
+                color={barColor}
+                ariaLabel={`${activeGroup} ${mode.toLowerCase()} over time`}
+              />
 
-          <Card title={`Totals by ${groupTitle}`}>
+              <div className="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
+                <span className="text-sm font-semibold text-gray-900">
+                  Total for {activeGroup}
+                </span>
+                <span className="text-base font-bold text-gray-900">
+                  {symbol}
+                  {barTotal.toLocaleString()}
+                </span>
+              </div>
+            </Card>
+          )}
+
+          {activeGroup === "all" && (
+            <>
+              <Card title={`Totals by ${groupTitle}`}>
             <ul className="space-y-4">
               {slices.map((slice, index) => {
                 const pct = (slice.value / total) * 100;
@@ -413,6 +504,8 @@ const Charts = () => {
                 </div>
               )}
             </Card>
+          )}
+            </>
           )}
         </div>
       )}
