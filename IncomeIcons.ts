@@ -29,6 +29,27 @@ import {
 } from "lucide-react";
 
 export const INCOME_ICONS = {
+  // Common income sources
+  Salary: Banknote,
+  Bonus: Gift,
+  Business: BriefcaseBusiness,
+  Freelance: Laptop,
+  Investment: TrendingUp,
+  Interest: BadgePercent,
+  Dividend: ChartNoAxesCombined,
+  Rental: House,
+  Refund: RotateCcw,
+  Cashback: HandCoins,
+  Commission: Handshake,
+  Pension: Landmark,
+  Scholarship: GraduationCap,
+  Prize: Trophy,
+  SideHustle: Store,
+  Allowance: Wallet,
+  Profit: CircleDollarSign,
+  GiftMoney: Gift,
+  Others: Package,
+
   Banknote,
   Wallet,
   Coins,

@@ -9,7 +9,7 @@ export interface Expense {
   amount: number;
   currency: CurrencyCode;
   categoryId: number; // food, electricity
-  account: string; // UPI, Cash
+  account: string; // UPI, Cash -> ExpenseCategory
   date: string;
 }
 
@@ -18,9 +18,23 @@ export interface Income {
     title:string | null;
     amount : number;
     currency: CurrencyCode;
-    categoryId: number; // UPI, Cash
+    categoryId: number | null;
+    account: string | null;
     date: string;
 }
+
+export interface Category {
+  id?: number;
+  name: string;
+  icon: ExpenseIconName;
+}
+
+export type BudgetTime =
+  | "1 month"
+  | "15 days"
+  | "1 week"
+  | "1 day"
+  | "custom";
 
 export interface Budget {
     id?:number;
@@ -28,9 +42,15 @@ export interface Budget {
     amount : number;
     categoryId: number;
     date:string;
-    time: "1 month" | "15 days" | "1 week" | "1 day"
+    time: BudgetTime;
+    endDate?: string;
 }
 
+export interface Accounts{
+  id? : number;
+  name : string;
+  icon : IncomeIconName; // UPI, Cash icon -> IncomeCategory
+}
 export interface IncomeCategory{
     id? : number;
     name : string;
@@ -46,6 +66,8 @@ export interface ExpenseCategory{
 class PennyWiseDB extends Dexie {
   expenses!: EntityTable<Expense, "id">;
   incomes!: EntityTable<Income, "id">;
+  accounts!: EntityTable<Accounts, "id">;
+  categories!: EntityTable<Category, "id">;
   expense_categories!: EntityTable<ExpenseCategory, "id">;
   income_categories!: EntityTable<IncomeCategory, "id">;
   budgets!: EntityTable<Budget, "id">;
@@ -53,9 +75,11 @@ class PennyWiseDB extends Dexie {
   constructor() {
     super("PennyWiseDB");
 
-    this.version(1).stores({
+    this.version(2).stores({
       expenses: "++id, title, amount, currency, categoryId, account, date",
       incomes: "++id, currency, categoryId, date",
+      accounts: "++id, name",
+      categories: "++id, name",
       expense_categories: "++id, name",
       income_categories: "++id, name",
       budgets: "++id, categoryId, date, time",

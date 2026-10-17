@@ -1,11 +1,7 @@
-import Transaction from "@/components/Transaction"
+import Reports from "@/components/Reports";
 
 const Home = () => {
-  return (
-    <div>
-      <Transaction/>
-    </div>
-  )
-}
+  return <Reports />;
+};
 
-export default Home
+export default Home;
