@@ -1,13 +1,29 @@
 "use client";
 
-import { db } from "@/db";
+import { CURRENCY, type CurrencyCode } from "@/currency";
+import { db, type RecurrenceDuration } from "@/db";
 import { AVAILABLE_ICONS, type ExpenseIconName } from "@/ExpenseIcons";
+import {
+  RECURRENCE_DURATIONS,
+  WEEKDAYS,
+  durationEndDate,
+} from "@/recurrence";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
-import { Plus, X, Search, Pencil, Trash2 } from "lucide-react";
+import { Plus, X, Search, Pencil, Trash2, Repeat } from "lucide-react";
+
+const getToday = () => {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+};
+
+const dayLabels = new Map(WEEKDAYS.map((day) => [day.value, day.label]));
 
 const Categories = () => {
   const categories = useLiveQuery(() => db.categories.toArray(), []);
+  const accounts = useLiveQuery(() => db.accounts.toArray(), []);
+  const recurrences = useLiveQuery(() => db.recurrences.toArray(), []);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -16,10 +32,32 @@ const Categories = () => {
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
 
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recAmount, setRecAmount] = useState("");
+  const [recCurrency, setRecCurrency] = useState<CurrencyCode>("INR");
+  const [recAccountId, setRecAccountId] = useState<number | "">("");
+  const [recDays, setRecDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [recDuration, setRecDuration] = useState<RecurrenceDuration>("1 month");
+  const [recStart, setRecStart] = useState("");
+
   const filteredIcons = Object.entries(AVAILABLE_ICONS).filter(
     ([iconName]) =>
       iconName.toLowerCase().includes(search.toLowerCase())
   );
+
+  const recurrenceByCategory = new Map(
+    (recurrences ?? []).map((item) => [item.categoryId, item])
+  );
+
+  const resetRecurrence = () => {
+    setIsRecurring(false);
+    setRecAmount("");
+    setRecCurrency("INR");
+    setRecAccountId(accounts?.[0]?.id ?? "");
+    setRecDays([1, 2, 3, 4, 5]);
+    setRecDuration("1 month");
+    setRecStart(getToday());
+  };
 
   const openAddForm = () => {
     setEditingId(null);
@@ -27,6 +65,7 @@ const Categories = () => {
     setIcon("Wallet");
     setSearch("");
     setMessage("");
+    resetRecurrence();
     setIsEditing(true);
   };
 
@@ -40,7 +79,33 @@ const Categories = () => {
     setIcon(category.icon);
     setSearch("");
     setMessage("");
+
+    const existing =
+      category.id !== undefined
+        ? recurrenceByCategory.get(category.id)
+        : undefined;
+
+    if (existing) {
+      setIsRecurring(true);
+      setRecAmount(String(existing.amount));
+      setRecCurrency(existing.currency);
+      setRecAccountId(existing.account ? Number(existing.account) : "");
+      setRecDays(existing.daysOfWeek);
+      setRecDuration(existing.duration);
+      setRecStart(existing.startDate);
+    } else {
+      resetRecurrence();
+    }
+
     setIsEditing(true);
+  };
+
+  const toggleDay = (value: number) => {
+    setRecDays((current) =>
+      current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value]
+    );
   };
 
   const handleSave = async () => {
@@ -51,17 +116,70 @@ const Categories = () => {
       return;
     }
 
+    if (isRecurring) {
+      const parsedAmount = Number(recAmount);
+
+      if (!parsedAmount || parsedAmount <= 0) {
+        setMessage("Please enter a valid recurring amount.");
+        return;
+      }
+
+      if (recAccountId === "") {
+        setMessage("Please select an account for the recurring expense.");
+        return;
+      }
+
+      if (recDays.length === 0) {
+        setMessage("Please pick at least one day of the week.");
+        return;
+      }
+
+      if (!recStart) {
+        setMessage("Please choose a start date.");
+        return;
+      }
+    }
+
     try {
+      let categoryId: number | null = editingId;
+
       if (editingId !== null) {
         await db.categories.update(editingId, {
           name: trimmedName,
           icon,
         });
       } else {
-        await db.categories.add({
+        categoryId = (await db.categories.add({
           name: trimmedName,
           icon,
-        });
+        })) ?? null;
+      }
+
+      if (categoryId !== null) {
+        const existing = recurrenceByCategory.get(categoryId);
+
+        if (isRecurring) {
+          const payload = {
+            categoryId,
+            amount: Number(recAmount),
+            currency: recCurrency,
+            account: String(recAccountId),
+            daysOfWeek: [...recDays].sort(),
+            startDate: recStart,
+            endDate: durationEndDate(recStart, recDuration),
+            duration: recDuration,
+            active: true,
+            lastRun: existing?.lastRun ?? null,
+          };
+
+          if (existing?.id !== undefined) {
+            await db.recurrences.update(existing.id, payload);
+          } else {
+            await db.recurrences.add(payload);
+          }
+        } else if (existing?.id !== undefined) {
+          await db.recurrences.delete(existing.id);
+        }
       }
 
       setIsEditing(false);
@@ -91,6 +209,11 @@ const Categories = () => {
         return;
       }
 
+      const existing = recurrenceByCategory.get(id);
+      if (existing?.id !== undefined) {
+        await db.recurrences.delete(existing.id);
+      }
+
       await db.categories.delete(id);
       setMessage("");
     } catch (error) {
@@ -99,9 +222,16 @@ const Categories = () => {
     }
   };
 
-  if (categories === undefined) {
+  if (
+    categories === undefined ||
+    accounts === undefined ||
+    recurrences === undefined
+  ) {
     return <p className="p-6 text-gray-500">Loading categories...</p>;
   }
+
+  const previewEnd =
+    isRecurring && recStart ? durationEndDate(recStart, recDuration) : "";
 
   return (
     <div className="relative mx-auto min-h-[70vh] w-full max-w-3xl px-4 pb-32 pt-6 sm:px-6">
@@ -144,6 +274,10 @@ const Categories = () => {
           {categories.map((category) => {
             const CategoryIcon =
               AVAILABLE_ICONS[category.icon] ?? AVAILABLE_ICONS.Ellipsis;
+            const recurrence =
+              category.id !== undefined
+                ? recurrenceByCategory.get(category.id)
+                : undefined;
 
             return (
               <div
@@ -159,6 +293,15 @@ const Categories = () => {
                   <p className="text-xs text-gray-500">
                     {category.icon}
                   </p>
+                  {recurrence && (
+                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs font-medium text-blue-600">
+                      <Repeat size={12} className="shrink-0" />
+                      {recurrence.daysOfWeek
+                        .map((day) => dayLabels.get(day))
+                        .join(", ")}{" "}
+                      · {recurrence.duration}
+                    </p>
+                  )}
                 </div>
 
                 <button
@@ -268,6 +411,170 @@ const Categories = () => {
                 No matching icons.
               </p>
             )}
+
+            {/* Recurring expense */}
+            <div className="mt-5 rounded-2xl border border-gray-200 p-4">
+              <button
+                type="button"
+                onClick={() => setIsRecurring((value) => !value)}
+                aria-pressed={isRecurring}
+                className="flex w-full items-center justify-between gap-2"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Repeat size={16} /> Recurring expense
+                </span>
+                <span
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                    isRecurring ? "bg-blue-600" : "bg-gray-300"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                      isRecurring ? "left-[22px]" : "left-0.5"
+                    }`}
+                  />
+                </span>
+              </button>
+
+              {isRecurring && (
+                <div className="mt-4 space-y-4">
+                  <p className="text-xs text-gray-500">
+                    Automatically add this expense on the days you pick.
+                  </p>
+
+                  <div className="flex gap-2">
+                    <select
+                      value={recCurrency}
+                      onChange={(e) =>
+                        setRecCurrency(e.target.value as CurrencyCode)
+                      }
+                      aria-label="Currency"
+                      className="w-2/5 rounded-lg border border-gray-200 bg-white p-2 text-sm outline-none focus:border-blue-500"
+                    >
+                      {Object.entries(CURRENCY).map(([code, details]) => (
+                        <option key={code} value={code}>
+                          {details.symbol} - {code}
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      inputMode="decimal"
+                      value={recAmount}
+                      onChange={(e) => setRecAmount(e.target.value)}
+                      placeholder="Amount"
+                      className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white p-2 text-sm outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="recurring-account"
+                      className="mb-1 block text-sm font-medium text-gray-600"
+                    >
+                      Account
+                    </label>
+                    <select
+                      id="recurring-account"
+                      value={recAccountId}
+                      onChange={(e) =>
+                        setRecAccountId(
+                          e.target.value === "" ? "" : Number(e.target.value)
+                        )
+                      }
+                      className="w-full rounded-xl border border-gray-200 bg-white p-2.5 text-sm outline-none focus:border-blue-500"
+                    >
+                      <option value="" disabled>
+                        Select account
+                      </option>
+                      {accounts.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <p className="mb-1.5 text-sm font-medium text-gray-600">
+                      Repeat on
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {WEEKDAYS.map((day) => {
+                        const active = recDays.includes(day.value);
+
+                        return (
+                          <button
+                            key={day.value}
+                            type="button"
+                            onClick={() => toggleDay(day.value)}
+                            aria-pressed={active}
+                            className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                              active
+                                ? "border-blue-600 bg-blue-50 text-blue-700"
+                                : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                            }`}
+                          >
+                            {day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label
+                        htmlFor="recurring-start"
+                        className="mb-1 block text-sm font-medium text-gray-600"
+                      >
+                        Start date
+                      </label>
+                      <input
+                        id="recurring-start"
+                        type="date"
+                        value={recStart}
+                        onChange={(e) => setRecStart(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-white p-2.5 text-sm outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div className="flex-1">
+                      <label
+                        htmlFor="recurring-duration"
+                        className="mb-1 block text-sm font-medium text-gray-600"
+                      >
+                        For
+                      </label>
+                      <select
+                        id="recurring-duration"
+                        value={recDuration}
+                        onChange={(e) =>
+                          setRecDuration(e.target.value as RecurrenceDuration)
+                        }
+                        className="w-full rounded-xl border border-gray-200 bg-white p-2.5 text-sm outline-none focus:border-blue-500"
+                      >
+                        {RECURRENCE_DURATIONS.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {previewEnd && (
+                    <p className="text-xs text-gray-500">
+                      Runs until {previewEnd}. Past days are added automatically
+                      when you open the app.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
 
             {message && (
               <p role="alert" className="mt-4 text-sm text-red-600">

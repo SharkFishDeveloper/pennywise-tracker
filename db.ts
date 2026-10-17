@@ -46,6 +46,27 @@ export interface Budget {
     endDate?: string;
 }
 
+export type RecurrenceDuration =
+  | "1 week"
+  | "2 weeks"
+  | "1 month"
+  | "6 months"
+  | "1 year";
+
+export interface Recurrence {
+  id?: number;
+  categoryId: number;
+  amount: number;
+  currency: CurrencyCode;
+  account: string;
+  daysOfWeek: number[];
+  startDate: string;
+  endDate: string;
+  duration: RecurrenceDuration;
+  lastRun: string | null;
+  active: boolean;
+}
+
 export interface Accounts{
   id? : number;
   name : string;
@@ -71,6 +92,7 @@ class PennyWiseDB extends Dexie {
   expense_categories!: EntityTable<ExpenseCategory, "id">;
   income_categories!: EntityTable<IncomeCategory, "id">;
   budgets!: EntityTable<Budget, "id">;
+  recurrences!: EntityTable<Recurrence, "id">;
 
   constructor() {
     super("PennyWiseDB");
@@ -83,6 +105,10 @@ class PennyWiseDB extends Dexie {
       expense_categories: "++id, name",
       income_categories: "++id, name",
       budgets: "++id, categoryId, date, time",
+    });
+
+    this.version(3).stores({
+      recurrences: "++id, categoryId, active",
     });
   }
 }
