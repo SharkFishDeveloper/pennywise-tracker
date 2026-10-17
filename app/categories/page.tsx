@@ -334,7 +334,7 @@ const Categories = () => {
       {/* Add/Edit form */}
       {isEditing && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
-          <div className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white p-5 text-gray-900 shadow-xl sm:rounded-3xl">
+          <div className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-gray-900 shadow-xl sm:rounded-3xl">
             <div className="mb-5 flex items-center justify-between gap-2">
               <h2 className="text-xl font-bold">
                 {editingId !== null ? "Edit category" : "Add category"}
@@ -373,47 +373,8 @@ const Categories = () => {
               autoFocus
             />
 
-            <p className="mb-3 text-sm font-medium">Choose an icon</p>
-
-            <div className="mb-3 flex items-center gap-2 rounded-xl border px-3">
-              <Search size={18} className="shrink-0 text-gray-400" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search icons..."
-                className="w-full py-3 outline-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {filteredIcons.map(([iconName, IconComponent]) => (
-                <button
-                  key={iconName}
-                  type="button"
-                  onClick={() => setIcon(iconName as ExpenseIconName)}
-                  aria-pressed={icon === iconName}
-                  className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl border p-2 ${
-                    icon === iconName
-                      ? "border-blue-600 bg-blue-50 text-blue-700 ring-1 ring-blue-600"
-                      : "border-gray-200 hover:bg-gray-50"
-                  }`}
-                >
-                  <IconComponent size={25} />
-                  <span className="text-center text-xs">
-                    {iconName.replace(/([a-z])([A-Z])/g, "$1 $2")}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {filteredIcons.length === 0 && (
-              <p className="py-6 text-center text-sm text-gray-500">
-                No matching icons.
-              </p>
-            )}
-
             {/* Recurring expense */}
-            <div className="mt-5 rounded-2xl border border-gray-200 p-4">
+            <div className="mb-4 rounded-2xl border border-gray-200 p-4">
               <button
                 type="button"
                 onClick={() => setIsRecurring((value) => !value)}
@@ -575,6 +536,45 @@ const Categories = () => {
                 </div>
               )}
             </div>
+
+            <p className="mb-3 text-sm font-medium">Choose an icon</p>
+
+            <div className="mb-3 flex items-center gap-2 rounded-xl border px-3">
+              <Search size={18} className="shrink-0 text-gray-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search icons..."
+                className="w-full py-3 outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {filteredIcons.map(([iconName, IconComponent]) => (
+                <button
+                  key={iconName}
+                  type="button"
+                  onClick={() => setIcon(iconName as ExpenseIconName)}
+                  aria-pressed={icon === iconName}
+                  className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl border p-2 ${
+                    icon === iconName
+                      ? "border-blue-600 bg-blue-50 text-blue-700 ring-1 ring-blue-600"
+                      : "border-gray-200 hover:bg-gray-50"
+                  }`}
+                >
+                  <IconComponent size={25} />
+                  <span className="text-center text-xs">
+                    {iconName.replace(/([a-z])([A-Z])/g, "$1 $2")}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {filteredIcons.length === 0 && (
+              <p className="py-6 text-center text-sm text-gray-500">
+                No matching icons.
+              </p>
+            )}
 
             {message && (
               <p role="alert" className="mt-4 text-sm text-red-600">

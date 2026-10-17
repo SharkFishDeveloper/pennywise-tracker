@@ -19,7 +19,7 @@ const navItems = [
 
 const Footer = () => {
   return (
-    <footer className="fixed bottom-0 left-0 z-50 w-full border-t bg-white pb-[env(safe-area-inset-bottom)]">
+    <footer className="fixed bottom-0 left-0 z-30 w-full border-t bg-white pb-[env(safe-area-inset-bottom)]">
       <nav className="mx-auto flex max-w-xl items-center justify-around gap-1 px-2 py-2">
         {navItems.map(({ name, href, icon: Icon }) => (
           <Link

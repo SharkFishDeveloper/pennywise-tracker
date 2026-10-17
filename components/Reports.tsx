@@ -134,7 +134,7 @@ const Reports = () => {
           </p>
         </div>
 
-        <div className="relative">
+        <div className="relative shrink-0">
           {menuOpen && (
             <button
               type="button"
