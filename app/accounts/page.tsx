@@ -1,13 +1,57 @@
 "use client";
 
+import { CURRENCY } from "@/currency";
 import { db } from "@/db";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Plus, X, Search, Pencil, Trash2 } from "lucide-react";
 import { INCOME_ICONS, type IncomeIconName } from "@/IncomeIcons";
+import PieChart, { PIE_COLORS, type Slice } from "@/components/charts/PieChart";
+import BarChart from "@/components/charts/BarChart";
+
+type Range = "month" | "15days" | "week";
+
+const ranges: { value: Range; label: string; days: number }[] = [
+  { value: "month", label: "1 Month", days: 30 },
+  { value: "15days", label: "15 Days", days: 15 },
+  { value: "week", label: "1 Week", days: 7 },
+];
+
+const MAX_DATES = 16;
+
+const withinDays = (date: string, days: number) => {
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+  return new Date(`${date}T00:00:00`).getTime() >= cutoff.getTime();
+};
+
+const shortDate = (value: string) =>
+  new Date(`${value}T00:00:00`).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+  });
+
+const Card = ({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) => (
+  <section className="rounded-2xl border border-gray-200 p-4 sm:p-5">
+    <h2 className="mb-4 text-sm font-semibold text-gray-900">{title}</h2>
+    {children}
+  </section>
+);
 
 const Accounts = () => {
   const accounts = useLiveQuery(() => db.accounts.toArray(), []);
+  const expenses = useLiveQuery(() => db.expenses.toArray(), []);
+
+  const [range, setRange] = useState<Range>("month");
+  const [barAccount, setBarAccount] = useState<string>("all");
+  const [selectedSlice, setSelectedSlice] = useState<string | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -24,6 +68,89 @@ const Accounts = () => {
       ),
     [search]
   );
+
+  const { rows, slices, total, symbol } = useMemo(() => {
+    const days = ranges.find((item) => item.value === range)?.days ?? 30;
+    const accountNames = new Map(
+      (accounts ?? []).map((item) => [String(item.id), item.name])
+    );
+
+    const filtered = (expenses ?? [])
+      .filter((row) => withinDays(row.date, days))
+      .map((row) => ({
+        date: row.date,
+        amount: row.amount,
+        currency: row.currency,
+        accountName: row.account
+          ? (accountNames.get(row.account) ?? "Unknown account")
+          : "Unknown account",
+      }));
+
+    const groupTotals = new Map<string, number>();
+    const currencyCount = new Map<string, number>();
+
+    filtered.forEach((row) => {
+      groupTotals.set(
+        row.accountName,
+        (groupTotals.get(row.accountName) ?? 0) + row.amount
+      );
+      currencyCount.set(row.currency, (currencyCount.get(row.currency) ?? 0) + 1);
+    });
+
+    const currency =
+      [...currencyCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "INR";
+
+    const sorted = [...groupTotals.entries()].sort((a, b) => b[1] - a[1]);
+
+    return {
+      rows: filtered,
+      slices: sorted.map(
+        ([name, value], index): Slice => ({
+          name,
+          value,
+          color: PIE_COLORS[index % PIE_COLORS.length],
+        })
+      ),
+      total: sorted.reduce((sum, [, value]) => sum + value, 0),
+      symbol: CURRENCY[currency as keyof typeof CURRENCY]?.symbol ?? "",
+    };
+  }, [expenses, accounts, range]);
+
+  const activeAccount =
+    barAccount !== "all" &&
+    (accounts ?? []).some((item) => item.name === barAccount)
+      ? barAccount
+      : "all";
+
+  const barPoints = useMemo(() => {
+    const dailyTotals = new Map<string, number>();
+
+    rows.forEach((row) => {
+      if (activeAccount !== "all" && row.accountName !== activeAccount) return;
+      dailyTotals.set(row.date, (dailyTotals.get(row.date) ?? 0) + row.amount);
+    });
+
+    const dateKeys = [...dailyTotals.keys()].sort().slice(-MAX_DATES);
+
+    return dateKeys.map((date) => ({
+      label: shortDate(date),
+      value: dailyTotals.get(date) ?? 0,
+      date,
+    }));
+  }, [rows, activeAccount]);
+
+  const barTotal = barPoints.reduce((sum, point) => sum + point.value, 0);
+
+  const barColor =
+    slices.find((slice) => slice.name === activeAccount)?.color ?? "#ef4444";
+
+  const accountIcons = useMemo(() => {
+    const map: Record<string, (typeof INCOME_ICONS)[keyof typeof INCOME_ICONS]> = {};
+    (accounts ?? []).forEach((item) => {
+      map[item.name] = INCOME_ICONS[item.icon] ?? INCOME_ICONS.Wallet;
+    });
+    return map;
+  }, [accounts]);
 
   const openAddForm = () => {
     setEditingId(null);
@@ -96,7 +223,7 @@ const Accounts = () => {
     }
   };
 
-  if (accounts === undefined) {
+  if (accounts === undefined || expenses === undefined) {
     return <p className="p-6 text-gray-500">Loading accounts...</p>;
   }
 
@@ -140,6 +267,7 @@ const Accounts = () => {
           </p>
         </div>
       ) : (
+        <>
         <div className="mt-6 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3">
           {accounts.map((account) => {
             const AccountIcon = INCOME_ICONS[account.icon];
@@ -182,6 +310,102 @@ const Accounts = () => {
             );
           })}
         </div>
+
+        <div className="mt-10 space-y-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold">Account activity</h2>
+              <p className="mt-0.5 text-sm text-gray-500">
+                Spending across all accounts.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 rounded-2xl bg-gray-100 p-1">
+            {ranges.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setRange(item.value)}
+                className={`rounded-xl p-2 text-xs font-medium transition sm:text-sm ${
+                  range === item.value
+                    ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-600"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-600">
+            <span className="shrink-0">Bar graph</span>
+            <select
+              value={activeAccount}
+              onChange={(e) => setBarAccount(e.target.value)}
+              className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white p-2 text-sm font-medium text-gray-900 outline-none focus:border-blue-500"
+            >
+              <option value="all">All accounts</option>
+              {(accounts ?? []).map((account) => (
+                <option key={account.id} value={account.name}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {slices.length === 0 ? (
+            <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-gray-200 text-center">
+              <h3 className="text-lg font-semibold">No spending yet</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Add expenses in this period to see the graphs.
+              </p>
+            </div>
+          ) : (
+            <>
+              <Card title="Spending by account">
+                <PieChart
+                  data={slices}
+                  total={total}
+                  symbol={symbol}
+                  centerLabel="Total spent"
+                  selected={selectedSlice}
+                  onSelect={setSelectedSlice}
+                  icons={accountIcons}
+                />
+              </Card>
+
+              <Card
+                title={
+                  activeAccount !== "all"
+                    ? `${activeAccount} spending over time`
+                    : "Spending by date"
+                }
+              >
+                <BarChart
+                  data={barPoints}
+                  color={barColor}
+                  ariaLabel={`Spending over time for ${
+                    activeAccount !== "all" ? activeAccount : "all accounts"
+                  }`}
+                />
+
+                <div className="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
+                  <span className="text-sm font-semibold text-gray-900">
+                    {activeAccount !== "all"
+                      ? `Total for ${activeAccount}`
+                      : "Total spent"}
+                  </span>
+                  <span className="text-base font-bold text-gray-900">
+                    {symbol}
+                    {barTotal.toLocaleString()}
+                  </span>
+                </div>
+              </Card>
+            </>
+          )}
+        </div>
+        </>
       )}
 
       {/* Add/Edit account dialog */}
