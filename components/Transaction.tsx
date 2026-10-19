@@ -6,7 +6,7 @@ import { INCOME_ICONS } from "@/IncomeIcons";
 import { AVAILABLE_ICONS } from "@/ExpenseIcons";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
-import { ChevronDown, Trash2 } from "lucide-react";
+import { Calculator, ChevronDown, Trash2 } from "lucide-react";
 
 export type EditableTransaction = {
   id: number;
@@ -30,6 +30,86 @@ const getToday = () => {
   return new Date(now.getTime() - offset).toISOString().slice(0, 10);
 };
 
+const evaluateExpression = (expr: string): number | null => {
+  const tokens = expr.match(/\d+\.?\d*%?|[+\-*/]/g);
+  if (!tokens) return null;
+
+  const values: number[] = [];
+  const operators: string[] = [];
+
+  for (const token of tokens) {
+    if (token === "+" || token === "-" || token === "*" || token === "/") {
+      operators.push(token);
+    } else {
+      const isPercent = token.endsWith("%");
+      const n = Number(isPercent ? token.slice(0, -1) : token);
+      if (Number.isNaN(n)) return null;
+
+      if (isPercent) {
+        const op = operators[operators.length - 1];
+        const left = values[values.length - 1];
+        if ((op === "+" || op === "-") && left !== undefined) {
+          values.push((left * n) / 100);
+        } else {
+          values.push(n / 100);
+        }
+      } else {
+        values.push(n);
+      }
+    }
+  }
+
+  if (values.length === 0 || values.length !== operators.length + 1) {
+    return null;
+  }
+
+  for (let i = 0; i < operators.length; ) {
+    if (operators[i] === "*" || operators[i] === "/") {
+      const a = values[i];
+      const b = values[i + 1];
+      if (operators[i] === "/" && b === 0) return null;
+      values.splice(i, 2, operators[i] === "*" ? a * b : a / b);
+      operators.splice(i, 1);
+    } else {
+      i++;
+    }
+  }
+
+  let result = values[0];
+  for (let i = 0; i < operators.length; i++) {
+    result =
+      operators[i] === "+" ? result + values[i + 1] : result - values[i + 1];
+  }
+  return result;
+};
+
+const CALC_KEYS: {
+  label: string;
+  key: string;
+  className?: string;
+  span?: boolean;
+}[] = [
+  { label: "C", key: "C", className: "bg-red-50 text-red-600" },
+  { label: "⌫", key: "BS" },
+  { label: "%", key: "%" },
+  { label: "÷", key: "/", className: "bg-blue-50 text-blue-700" },
+  { label: "7", key: "7" },
+  { label: "8", key: "8" },
+  { label: "9", key: "9" },
+  { label: "×", key: "*", className: "bg-blue-50 text-blue-700" },
+  { label: "4", key: "4" },
+  { label: "5", key: "5" },
+  { label: "6", key: "6" },
+  { label: "−", key: "-", className: "bg-blue-50 text-blue-700" },
+  { label: "1", key: "1" },
+  { label: "2", key: "2" },
+  { label: "3", key: "3" },
+  { label: "+", key: "+", className: "bg-blue-50 text-blue-700" },
+  { label: "0", key: "0", span: true },
+  { label: ".", key: "." },
+  { label: "=", key: "=", className: "bg-blue-600 text-white" },
+];
+
 const Transaction = ({ transaction, onSaved }: TransactionProps) => {
   const [transacType, setTransacType] = useState<"Income" | "Expense">(
     transaction?.type ?? "Expense"
@@ -52,6 +132,8 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
   const [openPicker, setOpenPicker] = useState<"account" | "category" | null>(
     null
   );
+  const [showCalc, setShowCalc] = useState(false);
+  const [calcExpr, setCalcExpr] = useState("");
 
   const isEditing = Boolean(transaction);
 
@@ -102,6 +184,70 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
   const SelectedCategoryIcon = selectedCategory
     ? AVAILABLE_ICONS[selectedCategory.icon] ?? AVAILABLE_ICONS.Ellipsis
     : null;
+
+  const calcPreview = (() => {
+    if (!calcExpr) return "";
+    const result = evaluateExpression(calcExpr);
+    if (result === null || !Number.isFinite(result)) return "";
+    return String(Math.round(result * 1e10) / 1e10);
+  })();
+
+  const pressCalc = (key: string) => {
+    if (key === "C") {
+      setCalcExpr("");
+      return;
+    }
+
+    if (key === "BS") {
+      setCalcExpr((prev) => prev.slice(0, -1));
+      return;
+    }
+
+    if (key === "=") {
+      const result = evaluateExpression(calcExpr);
+      if (result === null || !Number.isFinite(result)) {
+        setMessage("Invalid calculation.");
+        return;
+      }
+      const rounded = Math.round(result * 1e10) / 1e10;
+      setAmount(rounded);
+      setShowCalc(false);
+      return;
+    }
+
+    if (key === "%" || key === ".") {
+      setCalcExpr((prev) => {
+        const last = prev.slice(-1);
+        if (prev === "" || "+-*/".includes(last) || last === "%") return prev;
+
+        if (key === ".") {
+          const lastOp = Math.max(
+            prev.lastIndexOf("+"),
+            prev.lastIndexOf("-"),
+            prev.lastIndexOf("*"),
+            prev.lastIndexOf("/")
+          );
+          if (prev.slice(lastOp + 1).includes(".")) return prev;
+          return prev + ".";
+        }
+
+        return prev + "%";
+      });
+      return;
+    }
+
+    if ("+-*/".includes(key)) {
+      setCalcExpr((prev) => {
+        if (prev === "") return prev;
+        const last = prev.slice(-1);
+        if ("+-*/".includes(last)) return prev.slice(0, -1) + key;
+        return prev + key;
+      });
+      return;
+    }
+
+    setCalcExpr((prev) => prev + key);
+  };
 
   const handleSave = async () => {
     setMessage("");
@@ -183,6 +329,8 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
       setAccountId(null);
       setCategoryId(null);
       setDate(getToday());
+      setShowCalc(false);
+      setCalcExpr("");
       setMessage(`${transacType} saved successfully.`);
     } catch (error) {
       console.error("Failed to save transaction:", error);
@@ -282,7 +430,56 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
           placeholder="Amount"
           className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white p-2 text-sm outline-none focus:border-blue-500"
         />
+
+        <button
+          type="button"
+          onClick={() => {
+            const next = !showCalc;
+            setShowCalc(next);
+            setOpenPicker(null);
+            setMessage("");
+            if (next) setCalcExpr(amount === "" ? "" : String(amount));
+          }}
+          aria-label="Toggle calculator"
+          aria-expanded={showCalc}
+          className={`shrink-0 rounded-lg border px-3 outline-none transition ${
+            showCalc
+              ? "border-blue-500 bg-blue-50 text-blue-600"
+              : "border-gray-200 bg-white text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          <Calculator size={18} />
+        </button>
       </div>
+
+      {/* Calculator */}
+      {showCalc && (
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
+          <div className="mb-2 rounded-xl bg-white px-3 py-2 text-right">
+            <p className="min-h-[1rem] truncate text-xs text-gray-400">
+              {calcExpr.replace(/\*/g, "×").replace(/\//g, "÷") || "\u00A0"}
+            </p>
+            <p className="truncate text-lg font-semibold tabular-nums">
+              {calcPreview || "0"}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-4 gap-1.5">
+            {CALC_KEYS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => pressCalc(item.key)}
+                className={`rounded-lg p-2.5 text-sm font-medium transition active:scale-95 ${
+                  item.span ? "col-span-2" : ""
+                } ${item.className ?? "bg-white text-gray-900"}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Title */}
       <input
