@@ -282,7 +282,7 @@ const Categories = () => {
             return (
               <div
                 key={category.id}
-                className="flex items-center gap-3 rounded-2xl border p-3"
+                className="flex items-center gap-3 rounded-2xl border p-3 border-gray-200"
               >
                 <div className="rounded-xl bg-blue-50 p-3 text-blue-600">
                   <CategoryIcon size={24} />
