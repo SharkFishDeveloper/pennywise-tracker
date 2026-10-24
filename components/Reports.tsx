@@ -6,7 +6,7 @@ import { AVAILABLE_ICONS } from "@/ExpenseIcons";
 import { computeForecast } from "@/forecast";
 import { INCOME_ICONS } from "@/IncomeIcons";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Plus, X, MoreVertical, FileUp, Download } from "lucide-react";
+import { Plus, X, MoreVertical, FileUp, Calendar } from "lucide-react";
 import { useEffect, useState } from "react";
 import Forecast from "@/components/Forecast";
 import ImportExport from "@/components/ImportExport";
@@ -64,10 +64,19 @@ const Reports = () => {
   const [now, setNow] = useState<Date | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   useEffect(() => {
     setNow(new Date());
   }, []);
+
+  const getTodayString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
 
   if (!expenses || !incomes || !categories || !accounts || !recurrences) {
     return <p className="p-6 text-gray-500">Loading your records...</p>;
@@ -103,7 +112,11 @@ const Reports = () => {
     })),
   ].sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
 
-  const visibleRows = rows.filter(
+  const dateFilteredRows = selectedDate
+    ? rows.filter((row) => row.date === selectedDate)
+    : rows;
+
+  const visibleRows = dateFilteredRows.filter(
     (row) => filter === "All" || row.type === filter
   );
 
@@ -170,21 +183,74 @@ const Reports = () => {
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-4 gap-2 rounded-2xl bg-gray-100 p-1 mb-2">
-        {filters.map((item) => (
+      <div className="mt-5 mb-2">
+        <div className="flex items-center gap-2 overflow-x-auto">
+          <div className="grid grid-cols-4 gap-1 rounded-2xl bg-gray-100 p-1">
+            {filters.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setFilter(item)}
+                className={`rounded-xl px-2 py-1.5 text-xs font-medium transition sm:text-sm ${
+                  filter === item
+                    ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-600"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {selectedDate && (
+            <p className="text-xs text-gray-500">
+              Showing records for {formatDate(selectedDate)}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {selectedDate && (
+            <button
+              type="button"
+              onClick={() => setSelectedDate(null)}
+              className="rounded-xl border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900"
+            >
+              Clear
+            </button>
+          )}
           <button
-            key={item}
             type="button"
-            onClick={() => setFilter(item)}
-            className={`rounded-xl p-2 text-sm font-medium transition ${
-              filter === item
-                ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-600"
-                : "text-gray-600 hover:text-gray-900"
-            }`}
+            onClick={() => {
+              const input = document.getElementById(
+                "records-date-filter-top"
+              ) as HTMLInputElement | null;
+              if (input) {
+                if (typeof input.showPicker === "function") {
+                  input.showPicker();
+                } else {
+                  input.focus();
+                  input.click();
+                }
+              }
+            }}
+            aria-label="Open calendar"
+            className="shrink-0 rounded-full border border-gray-200 p-1.5 text-gray-600 transition hover:bg-gray-100 hover:text-blue-600"
           >
-            {item}
+            <Calendar size={16} />
           </button>
-        ))}
+          <input
+            id="records-date-filter-top"
+            type="date"
+            value={selectedDate ?? ""}
+            max={getTodayString()}
+            onChange={(e) => setSelectedDate(e.target.value || null)}
+            className="pointer-events-none absolute right-0 h-0 w-0 opacity-0"
+            tabIndex={-1}
+          />
+        </div>
       </div>
 
       {forecast ? (
