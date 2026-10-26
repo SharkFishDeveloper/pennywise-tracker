@@ -40,7 +40,7 @@ export interface Budget {
     id?:number;
     title:string | null;
     amount : number;
-    categoryId: number;
+    categoryId: number | null;
     date:string;
     time: BudgetTime;
     endDate?: string;

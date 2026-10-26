@@ -65,7 +65,7 @@ const Budgets = () => {
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [categoryId, setCategoryId] = useState<number | "">("");
+  const [categoryId, setCategoryId] = useState<number | "all" | "">("");
   const [amount, setAmount] = useState("");
   const [period, setPeriod] = useState<PeriodKey>("1 month");
   const [startDate, setStartDate] = useState("");
@@ -94,7 +94,8 @@ const Budgets = () => {
         const spent = list
           .filter(
             (item) =>
-              item.categoryId === budget.categoryId &&
+              (budget.categoryId === null ||
+                item.categoryId === budget.categoryId) &&
               item.date >= startStr &&
               item.date <= endStr
           )
@@ -121,9 +122,13 @@ const Budgets = () => {
 
   const categoryNames = new Map(categories.map((item) => [item.id, item.name]));
   const categoryIcons = new Map(categories.map((item) => [item.id, item.icon]));
-  const iconFor = (id: number | undefined) =>
-    AVAILABLE_ICONS[categoryIcons.get(id ?? -1) ?? "Ellipsis"] ??
-    AVAILABLE_ICONS.Ellipsis;
+  const iconFor = (id: number | null | undefined) =>
+    id === null
+      ? AVAILABLE_ICONS.Wallet
+      : (AVAILABLE_ICONS[categoryIcons.get(id ?? -1) ?? "Ellipsis"] ??
+        AVAILABLE_ICONS.Ellipsis);
+  const budgetCategoryName = (id: number | null) =>
+    id === null ? "All expenses" : (categoryNames.get(id) ?? "Uncategorized");
 
   const exceededRows = rows.filter((row) => row.exceeded);
 
@@ -140,7 +145,7 @@ const Budgets = () => {
 
   const openEditForm = (budget: Budget) => {
     setEditingId(budget.id ?? null);
-    setCategoryId(budget.categoryId);
+    setCategoryId(budget.categoryId ?? "all");
     setAmount(String(budget.amount));
     setPeriod(
       budget.time === "custom" || budget.time === "1 day"
@@ -179,7 +184,7 @@ const Budgets = () => {
     const payload = {
       title: null,
       amount: parsedAmount,
-      categoryId: categoryId as number,
+      categoryId: categoryId === "all" ? null : categoryId,
       date: startDate,
       time: period as Budget["time"],
       ...(period === "custom" ? { endDate } : {}),
@@ -276,8 +281,7 @@ const Budgets = () => {
 
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-semibold text-red-800">
-                            {categoryNames.get(budget.categoryId) ??
-                              "Uncategorized"}
+                            {budgetCategoryName(budget.categoryId)}
                           </p>
                           <p className="truncate text-xs text-red-500">
                             {periodLabel(budget)}
@@ -344,8 +348,7 @@ const Budgets = () => {
 
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium text-gray-900">
-                          {categoryNames.get(budget.categoryId) ??
-                            "Uncategorized"}
+                          {budgetCategoryName(budget.categoryId)}
                         </p>
                         <p className="truncate text-xs text-gray-500">
                           {periodLabel(budget)}
@@ -447,18 +450,25 @@ const Budgets = () => {
             <div className="mb-5 flex items-center gap-2 rounded-xl border px-3 focus-within:border-blue-500">
               {categoryId !== "" &&
                 (() => {
-                  const SelectedIcon = iconFor(categoryId as number);
+                  const SelectedIcon = iconFor(
+                    categoryId === "all" ? null : categoryId
+                  );
                   return <SelectedIcon size={18} className="shrink-0 text-gray-500" />;
                 })()}
               <select
                 id="budget-category"
                 value={categoryId}
-                onChange={(e) => setCategoryId(Number(e.target.value))}
+                onChange={(e) =>
+                  setCategoryId(
+                    e.target.value === "all" ? "all" : Number(e.target.value)
+                  )
+                }
                 className="w-full rounded-xl bg-transparent py-3 outline-none"
               >
                 <option value="" disabled>
                   Select a category
                 </option>
+                <option value="all">All expenses</option>
                 {categories.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
