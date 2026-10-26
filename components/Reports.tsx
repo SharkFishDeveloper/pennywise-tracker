@@ -64,7 +64,9 @@ const Reports = () => {
   const [now, setNow] = useState<Date | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
     setNow(new Date());
@@ -112,9 +114,21 @@ const Reports = () => {
     })),
   ].sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
 
-  const dateFilteredRows = selectedDate
-    ? rows.filter((row) => row.date === selectedDate)
-    : rows;
+  const hasDateFilter = Boolean(dateFrom || dateTo);
+
+  const dateFilteredRows = rows.filter((row) => {
+    if (dateFrom && row.date < dateFrom) return false;
+    if (dateTo && row.date > dateTo) return false;
+    return true;
+  });
+
+  const rangeLabel = !hasDateFilter
+    ? ""
+    : dateFrom && dateTo
+    ? `Showing ${formatDate(dateFrom)} – ${formatDate(dateTo)}`
+    : dateFrom
+    ? `Showing from ${formatDate(dateFrom)}`
+    : `Showing up to ${formatDate(dateTo)}`;
 
   const visibleRows = dateFilteredRows.filter(
     (row) => filter === "All" || row.type === filter
@@ -184,8 +198,8 @@ const Reports = () => {
       </div>
 
       <div className="mt-5 mb-2">
-        <div className="flex items-center gap-2 overflow-x-auto">
-          <div className="grid grid-cols-4 gap-1 rounded-2xl bg-gray-100 p-1">
+        <div className="flex w-full items-center gap-2">
+          <div className="grid w-full grid-cols-4 gap-1 rounded-2xl bg-gray-100 p-1">
             {filters.map((item) => (
               <button
                 key={item}
@@ -204,52 +218,83 @@ const Reports = () => {
         </div>
       </div>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          {selectedDate && (
-            <p className="text-xs text-gray-500">
-              Showing records for {formatDate(selectedDate)}
-            </p>
+        <div className="flex min-w-0 items-center gap-2">
+          {hasDateFilter && (
+            <p className="truncate text-xs text-gray-500">{rangeLabel}</p>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
-          {selectedDate && (
+        <div className="relative flex shrink-0 items-center gap-1.5">
+          {calendarOpen && (
             <button
               type="button"
-              onClick={() => setSelectedDate(null)}
-              className="rounded-xl border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900"
-            >
-              Clear
-            </button>
+              aria-label="Close date filter"
+              onClick={() => setCalendarOpen(false)}
+              className="fixed inset-0 z-40 cursor-default"
+            />
           )}
           <button
             type="button"
-            onClick={() => {
-              const input = document.getElementById(
-                "records-date-filter-top"
-              ) as HTMLInputElement | null;
-              if (input) {
-                if (typeof input.showPicker === "function") {
-                  input.showPicker();
-                } else {
-                  input.focus();
-                  input.click();
-                }
-              }
-            }}
-            aria-label="Open calendar"
-            className="shrink-0 rounded-full border border-gray-200 p-1.5 text-gray-600 transition hover:bg-gray-100 hover:text-blue-600"
+            onClick={() => setCalendarOpen((value) => !value)}
+            aria-label="Filter by date range"
+            aria-expanded={calendarOpen}
+            className="relative z-50 shrink-0 rounded-full border border-gray-200 p-1.5 text-gray-600 transition hover:bg-gray-100 hover:text-blue-600"
           >
             <Calendar size={16} />
+            {hasDateFilter && (
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-blue-600 ring-2 ring-white" />
+            )}
           </button>
-          <input
-            id="records-date-filter-top"
-            type="date"
-            value={selectedDate ?? ""}
-            max={getTodayString()}
-            onChange={(e) => setSelectedDate(e.target.value || null)}
-            className="pointer-events-none absolute right-0 h-0 w-0 opacity-0"
-            tabIndex={-1}
-          />
+
+          {calendarOpen && (
+            <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl border border-gray-200 bg-white p-4 shadow-lg">
+              <p className="mb-3 text-sm font-semibold text-gray-900">
+                Filter by date
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1 text-xs font-medium text-gray-500">
+                  From
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    max={dateTo || getTodayString()}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-medium text-gray-500">
+                  To
+                  <input
+                    type="date"
+                    value={dateTo}
+                    min={dateFrom || undefined}
+                    max={getTodayString()}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
+                  disabled={!hasDateFilter}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCalendarOpen(false)}
+                  className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
