@@ -15,7 +15,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowLeft,
-  Minus,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import Forecast from "@/components/Forecast";
@@ -81,7 +80,6 @@ const Reports = () => {
   const [calcActive, setCalcActive] = useState(false);
   const [calcBaseKey, setCalcBaseKey] = useState<string | null>(null);
   const [calcTotal, setCalcTotal] = useState(0);
-  const [calcSign, setCalcSign] = useState<1 | -1>(1);
   const [calcApplied, setCalcApplied] = useState<Record<string, number>>({});
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggered = useRef(false);
@@ -192,15 +190,13 @@ const Reports = () => {
     setCalcActive(false);
     setCalcBaseKey(null);
     setCalcTotal(0);
-    setCalcSign(1);
     setCalcApplied({});
   };
 
   const startCalc = (row: ReportRow) => {
     setCalcActive(true);
     setCalcBaseKey(row.key);
-    setCalcTotal(row.amount);
-    setCalcSign(1);
+    setCalcTotal(row.type === "Expense" ? -row.amount : row.amount);
     setCalcApplied({});
   };
 
@@ -215,7 +211,7 @@ const Reports = () => {
         return next;
       });
     } else {
-      const delta = calcSign * row.amount;
+      const delta = row.type === "Expense" ? -row.amount : row.amount;
       setCalcTotal((total) => total + delta);
       setCalcApplied((prev) => ({ ...prev, [row.key]: delta }));
     }
@@ -460,24 +456,6 @@ const Reports = () => {
 
                   {calcActive ? (
                     <div className="flex shrink-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setCalcSign((sign) => (sign === 1 ? -1 : 1))
-                        }
-                        aria-label={
-                          calcSign === 1
-                            ? "Switch to subtract"
-                            : "Switch to add"
-                        }
-                        className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition hover:bg-gray-100"
-                      >
-                        {calcSign === 1 ? (
-                          <Plus size={13} />
-                        ) : (
-                          <Minus size={13} />
-                        )}
-                      </button>
                       <span
                         className={`text-xl font-semibold ${
                           calcTotal >= 0 ? "text-green-600" : "text-red-600"
@@ -511,7 +489,7 @@ const Reports = () => {
 
                 {calcActive && (
                   <p className="px-1 text-xs text-gray-500">
-                    Tap tiles to add or subtract · tap +/− to switch
+                    Tap tiles to add their signed amounts
                   </p>
                 )}
 
