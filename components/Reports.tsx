@@ -6,8 +6,18 @@ import { AVAILABLE_ICONS } from "@/ExpenseIcons";
 import { computeForecast } from "@/forecast";
 import { INCOME_ICONS } from "@/IncomeIcons";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Plus, X, MoreVertical, FileUp, Calendar } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  Plus,
+  X,
+  MoreVertical,
+  FileUp,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  ArrowLeft,
+  Minus,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import Forecast from "@/components/Forecast";
 import ImportExport from "@/components/ImportExport";
 import Transaction from "@/components/Transaction";
@@ -67,10 +77,25 @@ const Reports = () => {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [calcActive, setCalcActive] = useState(false);
+  const [calcBaseKey, setCalcBaseKey] = useState<string | null>(null);
+  const [calcTotal, setCalcTotal] = useState(0);
+  const [calcSign, setCalcSign] = useState<1 | -1>(1);
+  const [calcApplied, setCalcApplied] = useState<Record<string, number>>({});
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTriggered = useRef(false);
 
   useEffect(() => {
     setNow(new Date());
   }, []);
+
+  useEffect(
+    () => () => {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    },
+    []
+  );
 
   const getTodayString = () => {
     const d = new Date();
@@ -151,6 +176,76 @@ const Reports = () => {
       ? computeForecast(expenses, recurrences, now)
       : null;
 
+  const monthKeys = monthGroups.map(([month]) => month);
+  const currentMonthKey =
+    selectedMonth && monthKeys.includes(selectedMonth)
+      ? selectedMonth
+      : monthKeys[0] ?? null;
+  const currentMonthIndex = currentMonthKey
+    ? monthKeys.indexOf(currentMonthKey)
+    : -1;
+  const currentGroup = currentMonthKey
+    ? months.get(currentMonthKey) ?? []
+    : [];
+
+  const cancelCalc = () => {
+    setCalcActive(false);
+    setCalcBaseKey(null);
+    setCalcTotal(0);
+    setCalcSign(1);
+    setCalcApplied({});
+  };
+
+  const startCalc = (row: ReportRow) => {
+    setCalcActive(true);
+    setCalcBaseKey(row.key);
+    setCalcTotal(row.amount);
+    setCalcSign(1);
+    setCalcApplied({});
+  };
+
+  const handleCalcTap = (row: ReportRow) => {
+    if (row.key === calcBaseKey) return;
+    const existing = calcApplied[row.key];
+    if (existing !== undefined) {
+      setCalcTotal((total) => total - existing);
+      setCalcApplied((prev) => {
+        const next = { ...prev };
+        delete next[row.key];
+        return next;
+      });
+    } else {
+      const delta = calcSign * row.amount;
+      setCalcTotal((total) => total + delta);
+      setCalcApplied((prev) => ({ ...prev, [row.key]: delta }));
+    }
+  };
+
+  const startLongPress = (row: ReportRow) => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTriggered.current = false;
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true;
+      startCalc(row);
+    }, 500);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const shiftMonth = (direction: "older" | "newer") => {
+    if (currentMonthIndex < 0) return;
+    const nextIndex =
+      direction === "older" ? currentMonthIndex + 1 : currentMonthIndex - 1;
+    if (nextIndex < 0 || nextIndex >= monthKeys.length) return;
+    setSelectedMonth(monthKeys[nextIndex]);
+    cancelCalc();
+  };
+
   return (
     <div className="relative mx-auto min-h-[70vh] w-full max-w-3xl px-4 pb-32 pt-6 sm:px-6">
       <div className="flex items-start justify-between gap-3">
@@ -204,7 +299,11 @@ const Reports = () => {
               <button
                 key={item}
                 type="button"
-                onClick={() => setFilter(item)}
+                onClick={() => {
+                  setFilter(item);
+                  setSelectedMonth(null);
+                  cancelCalc();
+                }}
                 className={`rounded-xl px-2 py-1.5 text-xs font-medium transition sm:text-sm ${
                   filter === item
                     ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-600"
@@ -257,7 +356,11 @@ const Reports = () => {
                     type="date"
                     value={dateFrom}
                     max={dateTo || getTodayString()}
-                    onChange={(e) => setDateFrom(e.target.value)}
+                    onChange={(e) => {
+                      setDateFrom(e.target.value);
+                      setSelectedMonth(null);
+                      cancelCalc();
+                    }}
                     className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   />
                 </label>
@@ -268,7 +371,11 @@ const Reports = () => {
                     value={dateTo}
                     min={dateFrom || undefined}
                     max={getTodayString()}
-                    onChange={(e) => setDateTo(e.target.value)}
+                    onChange={(e) => {
+                      setDateTo(e.target.value);
+                      setSelectedMonth(null);
+                      cancelCalc();
+                    }}
                     className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   />
                 </label>
@@ -279,6 +386,8 @@ const Reports = () => {
                   onClick={() => {
                     setDateFrom("");
                     setDateTo("");
+                    setSelectedMonth(null);
+                    cancelCalc();
                   }}
                   disabled={!hasDateFilter}
                   className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
@@ -316,31 +425,98 @@ const Reports = () => {
           </p>
         </div>
       ) : (
-        <div className="mx-auto w-full max-w-xl space-y-8">
-          {monthGroups.map(([month, group]) => {
-            const { income, expense } = sumByType(group);
+        <div className="mx-auto w-full max-w-xl space-y-3">
+          {(() => {
+            const { income, expense } = sumByType(currentGroup);
             const net = income - expense;
-            const symbol = CURRENCY[group[0].currency]?.symbol ?? "";
+            const symbol = CURRENCY[currentGroup[0].currency]?.symbol ?? "";
 
             return (
-              <div key={month}>
-                <div className="mb-3 flex items-baseline justify-between gap-3 px-1">
-                  <h2 className="text-sm font-semibold text-gray-900">
-                    {formatMonth(month)}
-                  </h2>
-                  <span
-                    className={`text-xl font-semibold ${
-                      net >= 0 ? "text-green-600" : "text-red-600"
-                    }`}
-                  >
-                    {symbol} 
-                    {net < 0 ? "-" : "+"}
-                    {Math.abs(net).toLocaleString()}
-                  </span>
+              <>
+                <div className="flex items-center justify-between gap-3 px-1">
+                  <div className="flex min-w-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => shiftMonth("older")}
+                      disabled={currentMonthIndex >= monthKeys.length - 1}
+                      aria-label="Previous month"
+                      className="rounded-full p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <h2 className="truncate text-sm font-semibold text-gray-900">
+                      {currentMonthKey ? formatMonth(currentMonthKey) : ""}
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={() => shiftMonth("newer")}
+                      disabled={currentMonthIndex <= 0}
+                      aria-label="Next month"
+                      className="rounded-full p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+
+                  {calcActive ? (
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCalcSign((sign) => (sign === 1 ? -1 : 1))
+                        }
+                        aria-label={
+                          calcSign === 1
+                            ? "Switch to subtract"
+                            : "Switch to add"
+                        }
+                        className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition hover:bg-gray-100"
+                      >
+                        {calcSign === 1 ? (
+                          <Plus size={13} />
+                        ) : (
+                          <Minus size={13} />
+                        )}
+                      </button>
+                      <span
+                        className={`text-xl font-semibold ${
+                          calcTotal >= 0 ? "text-green-600" : "text-red-600"
+                        }`}
+                      >
+                        {symbol}
+                        {calcTotal < 0 ? "-" : "+"}
+                        {Math.abs(calcTotal).toLocaleString()}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={cancelCalc}
+                        aria-label="Cancel calculation"
+                        className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition hover:bg-gray-100"
+                      >
+                        <ArrowLeft size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <span
+                      className={`text-xl font-semibold ${
+                        net >= 0 ? "text-green-600" : "text-red-600"
+                      }`}
+                    >
+                      {symbol}
+                      {net < 0 ? "-" : "+"}
+                      {Math.abs(net).toLocaleString()}
+                    </span>
+                  )}
                 </div>
 
+                {calcActive && (
+                  <p className="px-1 text-xs text-gray-500">
+                    Tap tiles to add or subtract · tap +/− to switch
+                  </p>
+                )}
+
                 <div className="space-y-2">
-                  {group.map((row) => {
+                  {currentGroup.map((row) => {
                     const isExpense = row.type === "Expense";
                     const categoryName = isExpense
                       ? categoryNames.get(row.categoryId ?? -1) ?? "Uncategorized"
@@ -356,16 +532,38 @@ const Reports = () => {
                     const subtitle = [categoryName, accountName]
                       .filter(Boolean)
                       .join(" · ");
+                    const isBase = calcActive && row.key === calcBaseKey;
+                    const isApplied =
+                      calcActive && calcApplied[row.key] !== undefined;
 
                     return (
                       <button
                         key={row.key}
                         type="button"
+                        onPointerDown={() => startLongPress(row)}
+                        onPointerUp={cancelLongPress}
+                        onPointerLeave={cancelLongPress}
+                        onPointerCancel={cancelLongPress}
+                        onContextMenu={(event) => event.preventDefault()}
                         onClick={() => {
+                          if (longPressTriggered.current) {
+                            longPressTriggered.current = false;
+                            return;
+                          }
+                          if (calcActive) {
+                            handleCalcTap(row);
+                            return;
+                          }
                           setEditingRow(row);
                           setEditorOpen(true);
                         }}
-                        className="flex w-full items-center gap-2.5 rounded-xl border border-gray-200 p-2.5 text-left transition hover:bg-gray-50"
+                        className={`flex w-full select-none items-center gap-2.5 rounded-xl border p-2.5 text-left transition ${
+                          isBase
+                            ? "border-blue-400 bg-blue-50 ring-1 ring-blue-400"
+                            : isApplied
+                            ? "border-blue-200 bg-blue-50/60"
+                            : "border-gray-200 hover:bg-gray-50"
+                        }`}
                       >
                         <div
                           className={`shrink-0 rounded-lg p-2 ${
@@ -400,9 +598,9 @@ const Reports = () => {
                     );
                   })}
                 </div>
-              </div>
+              </>
             );
-          })}
+          })()}
         </div>
       )}
 
