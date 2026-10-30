@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import PieChart, { PIE_COLORS } from "@/components/charts/PieChart";
 import LineChart from "@/components/charts/LineChart";
 import BarChart from "@/components/charts/BarChart";
+import ExpectedActualChart from "@/components/charts/ExpectedActualChart";
 
 type Mode = "Expense" | "Income";
 type Range = "all" | "month" | "15days" | "week";
@@ -92,6 +93,111 @@ const buildDateSeries = (
     dates.push(toDateKey(cursor));
   }
   return dates;
+};
+
+const daysInMonth = (year: number, month0: number) =>
+  new Date(year, month0 + 1, 0).getDate();
+
+const startOfDay = (date: Date) => {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+};
+
+const addDays = (date: Date, days: number) => {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+};
+
+type ComparisonPeriod = {
+  start: string;
+  end: string;
+  label: string;
+  current: boolean;
+};
+
+const buildComparisonPeriods = (
+  range: Range,
+  today: Date
+): ComparisonPeriod[] => {
+  const anchor = startOfDay(today);
+  const periods: ComparisonPeriod[] = [];
+
+  if (range === "week") {
+    for (let i = 0; i < 6; i += 1) {
+      const end = addDays(anchor, -7 * i);
+      const start = addDays(end, -6);
+      const baseLabel = start.toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+      });
+      periods.push({
+        start: toDateKey(start),
+        end: toDateKey(end),
+        label: i === 0 ? `${baseLabel}*` : baseLabel,
+        current: i === 0,
+      });
+    }
+  } else if (range === "15days") {
+    let year = anchor.getFullYear();
+    let month0 = anchor.getMonth();
+    let half = anchor.getDate() <= 15 ? 0 : 1;
+
+    for (let i = 0; i < 6; i += 1) {
+      const startDay = half === 0 ? 1 : 16;
+      const endDay = half === 0 ? 15 : daysInMonth(year, month0);
+      const start = new Date(year, month0, startDay);
+      const end = i === 0 ? anchor : new Date(year, month0, endDay);
+      const baseLabel = start.toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+      });
+
+      periods.push({
+        start: toDateKey(start),
+        end: toDateKey(end),
+        label: i === 0 ? `${baseLabel}*` : baseLabel,
+        current: i === 0,
+      });
+
+      half -= 1;
+      if (half < 0) {
+        half = 1;
+        month0 -= 1;
+        if (month0 < 0) {
+          month0 = 11;
+          year -= 1;
+        }
+      }
+    }
+  } else {
+    let year = anchor.getFullYear();
+    let month0 = anchor.getMonth();
+
+    for (let i = 0; i < 6; i += 1) {
+      const start = new Date(year, month0, 1);
+      const end = i === 0 ? anchor : new Date(year, month0 + 1, 0);
+      const baseLabel = start.toLocaleDateString(undefined, {
+        month: "short",
+      });
+
+      periods.push({
+        start: toDateKey(start),
+        end: toDateKey(end),
+        label: i === 0 ? `${baseLabel}*` : baseLabel,
+        current: i === 0,
+      });
+
+      month0 -= 1;
+      if (month0 < 0) {
+        month0 = 11;
+        year -= 1;
+      }
+    }
+  }
+
+  return periods.reverse();
 };
 
 const tileDate = (value: string) =>
@@ -322,6 +428,46 @@ const Charts = () => {
     ? iconMap[detailGroup] ??
       (mode === "Expense" ? AVAILABLE_ICONS.Ellipsis : INCOME_ICONS.Wallet)
     : AVAILABLE_ICONS.Ellipsis;
+
+  const comparisonPeriods =
+    mode === "Expense" && detailGroup
+      ? buildComparisonPeriods(range, today)
+      : [];
+  const comparisonHistory =
+    mode === "Expense" && detailGroup
+      ? allRows.filter((row) => nameOf(row) === detailGroup)
+      : [];
+  const comparisonData = comparisonPeriods.map((period) => ({
+    label: period.label,
+    current: period.current,
+    actual: comparisonHistory
+      .filter((row) => row.date >= period.start && row.date <= period.end)
+      .reduce((sum, row) => sum + row.amount, 0),
+  }));
+  const completedComparison = comparisonData.filter((point) => !point.current);
+  const comparisonAverage =
+    completedComparison.length > 0
+      ? completedComparison.reduce((sum, point) => sum + point.actual, 0) /
+        completedComparison.length
+      : 0;
+  const comparisonPoints = comparisonData.map((point) => ({
+    label: point.label,
+    actual: point.actual,
+    expected: comparisonAverage,
+  }));
+  const hasComparisonData = comparisonPoints.some((point) => point.actual > 0);
+  const comparisonUnit =
+    range === "week"
+      ? "weeks"
+      : range === "15days"
+        ? "15-day periods"
+        : "months";
+  const comparisonUnitSingular =
+    range === "week"
+      ? "week"
+      : range === "15days"
+        ? "15-day period"
+        : "month";
 
   const changeMode = (value: Mode) => {
     setMode(value);
@@ -652,6 +798,23 @@ const Charts = () => {
             </Card>
           )}
             </>
+          )}
+
+          {mode === "Expense" && detailGroup && hasComparisonData && (
+            <Card title={`${detailGroup} expected vs actual`}>
+              <p className="mb-3 text-xs text-gray-500">
+                Last 6 {comparisonUnit} · expected is the average of earlier{" "}
+                {comparisonUnit} · * latest {comparisonUnitSingular} includes
+                today
+              </p>
+              <ExpectedActualChart
+                data={comparisonPoints}
+                symbol={symbol}
+                actualColor={barColor}
+                expectedColor="#6b7280"
+                ariaLabel={`Expected vs actual spending for ${detailGroup}`}
+              />
+            </Card>
           )}
         </div>
       )}
