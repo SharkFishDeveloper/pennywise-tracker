@@ -288,7 +288,7 @@ const Reports = () => {
         </div>
       </div>
 
-      <div className="mt-5 mb-2">
+      <div className="mt-5 mb-1">
         <div className="flex w-full items-center gap-2">
           <div className="grid w-full grid-cols-4 gap-1 rounded-2xl bg-gray-100 p-1">
             {filters.map((item) => (
@@ -312,6 +312,98 @@ const Reports = () => {
           </div>
         </div>
       </div>
+
+      <div className="mb-1 flex items-center justify-between gap-2">
+        {hasDateFilter ? (
+          <p className="truncate text-xs text-gray-500">{rangeLabel}</p>
+        ) : (
+          <span aria-hidden />
+        )}
+        <div className="relative flex shrink-0 items-center">
+          {calendarOpen && (
+            <button
+              type="button"
+              aria-label="Close date filter"
+              onClick={() => setCalendarOpen(false)}
+              className="fixed inset-0 z-40 cursor-default"
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => setCalendarOpen((value) => !value)}
+            aria-label="Filter by date range"
+            aria-expanded={calendarOpen}
+            className="relative z-50 shrink-0 rounded-full border border-gray-200 p-1.5 text-gray-600 transition hover:bg-gray-100 hover:text-blue-600"
+          >
+            <Calendar size={16} />
+            {hasDateFilter && (
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-blue-600 ring-2 ring-white" />
+            )}
+          </button>
+
+          {calendarOpen && (
+            <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl border border-gray-200 bg-white p-4 shadow-lg">
+              <p className="mb-3 text-sm font-semibold text-gray-900">
+                Filter by date
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1 text-xs font-medium text-gray-500">
+                  From
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    max={dateTo || getTodayString()}
+                    onChange={(e) => {
+                      setDateFrom(e.target.value);
+                      setSelectedMonth(null);
+                      cancelCalc();
+                    }}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-medium text-gray-500">
+                  To
+                  <input
+                    type="date"
+                    value={dateTo}
+                    min={dateFrom || undefined}
+                    max={getTodayString()}
+                    onChange={(e) => {
+                      setDateTo(e.target.value);
+                      setSelectedMonth(null);
+                      cancelCalc();
+                    }}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDateFrom("");
+                    setDateTo("");
+                    setSelectedMonth(null);
+                    cancelCalc();
+                  }}
+                  disabled={!hasDateFilter}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCalendarOpen(false)}
+                  className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {forecast ? (
         <Forecast
           forecast={forecast}
@@ -379,97 +471,6 @@ const Reports = () => {
                     Tap tiles to add their signed amounts
                   </p>
                 )}
-
-                <div className="flex items-center justify-between gap-2">
-                  {hasDateFilter ? (
-                    <p className="truncate text-xs text-gray-500">{rangeLabel}</p>
-                  ) : (
-                    <span aria-hidden />
-                  )}
-                  <div className="relative flex shrink-0 items-center">
-                    {calendarOpen && (
-                      <button
-                        type="button"
-                        aria-label="Close date filter"
-                        onClick={() => setCalendarOpen(false)}
-                        className="fixed inset-0 z-40 cursor-default"
-                      />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setCalendarOpen((value) => !value)}
-                      aria-label="Filter by date range"
-                      aria-expanded={calendarOpen}
-                      className="relative z-50 shrink-0 rounded-full border border-gray-200 p-1.5 text-gray-600 transition hover:bg-gray-100 hover:text-blue-600"
-                    >
-                      <Calendar size={16} />
-                      {hasDateFilter && (
-                        <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-blue-600 ring-2 ring-white" />
-                      )}
-                    </button>
-
-                    {calendarOpen && (
-                      <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl border border-gray-200 bg-white p-4 shadow-lg">
-                        <p className="mb-3 text-sm font-semibold text-gray-900">
-                          Filter by date
-                        </p>
-                        <div className="grid grid-cols-2 gap-3">
-                          <label className="flex flex-col gap-1 text-xs font-medium text-gray-500">
-                            From
-                            <input
-                              type="date"
-                              value={dateFrom}
-                              max={dateTo || getTodayString()}
-                              onChange={(e) => {
-                                setDateFrom(e.target.value);
-                                setSelectedMonth(null);
-                                cancelCalc();
-                              }}
-                              className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                            />
-                          </label>
-                          <label className="flex flex-col gap-1 text-xs font-medium text-gray-500">
-                            To
-                            <input
-                              type="date"
-                              value={dateTo}
-                              min={dateFrom || undefined}
-                              max={getTodayString()}
-                              onChange={(e) => {
-                                setDateTo(e.target.value);
-                                setSelectedMonth(null);
-                                cancelCalc();
-                              }}
-                              className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                            />
-                          </label>
-                        </div>
-                        <div className="mt-4 flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDateFrom("");
-                              setDateTo("");
-                              setSelectedMonth(null);
-                              cancelCalc();
-                            }}
-                            disabled={!hasDateFilter}
-                            className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            Clear
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setCalendarOpen(false)}
-                            className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
-                          >
-                            Done
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
 
                 {calcActive && (
                   <div className="fixed right-3 top-1/2 z-40 flex -translate-y-1/2 items-center gap-2 rounded-2xl border border-gray-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur">
