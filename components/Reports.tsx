@@ -312,97 +312,6 @@ const Reports = () => {
           </div>
         </div>
       </div>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          {hasDateFilter && (
-            <p className="truncate text-xs text-gray-500">{rangeLabel}</p>
-          )}
-        </div>
-        <div className="relative flex shrink-0 items-center gap-1.5">
-          {calendarOpen && (
-            <button
-              type="button"
-              aria-label="Close date filter"
-              onClick={() => setCalendarOpen(false)}
-              className="fixed inset-0 z-40 cursor-default"
-            />
-          )}
-          <button
-            type="button"
-            onClick={() => setCalendarOpen((value) => !value)}
-            aria-label="Filter by date range"
-            aria-expanded={calendarOpen}
-            className="relative z-50 shrink-0 rounded-full border border-gray-200 p-1.5 text-gray-600 transition hover:bg-gray-100 hover:text-blue-600"
-          >
-            <Calendar size={16} />
-            {hasDateFilter && (
-              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-blue-600 ring-2 ring-white" />
-            )}
-          </button>
-
-          {calendarOpen && (
-            <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl border border-gray-200 bg-white p-4 shadow-lg">
-              <p className="mb-3 text-sm font-semibold text-gray-900">
-                Filter by date
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="flex flex-col gap-1 text-xs font-medium text-gray-500">
-                  From
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    max={dateTo || getTodayString()}
-                    onChange={(e) => {
-                      setDateFrom(e.target.value);
-                      setSelectedMonth(null);
-                      cancelCalc();
-                    }}
-                    className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs font-medium text-gray-500">
-                  To
-                  <input
-                    type="date"
-                    value={dateTo}
-                    min={dateFrom || undefined}
-                    max={getTodayString()}
-                    onChange={(e) => {
-                      setDateTo(e.target.value);
-                      setSelectedMonth(null);
-                      cancelCalc();
-                    }}
-                    className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                </label>
-              </div>
-              <div className="mt-4 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDateFrom("");
-                    setDateTo("");
-                    setSelectedMonth(null);
-                    cancelCalc();
-                  }}
-                  disabled={!hasDateFilter}
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCalendarOpen(false)}
-                  className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
       {forecast ? (
         <Forecast
           forecast={forecast}
@@ -429,7 +338,7 @@ const Reports = () => {
 
             return (
               <>
-                <div className="flex items-center justify-between gap-3 px-1">
+                <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-0.5">
                     <button
                       type="button"
@@ -454,43 +363,134 @@ const Reports = () => {
                     </button>
                   </div>
 
-                  {calcActive ? (
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <span
-                        className={`text-xl font-semibold ${
-                          calcTotal >= 0 ? "text-green-600" : "text-red-600"
-                        }`}
-                      >
-                        {symbol}
-                        {calcTotal < 0 ? "-" : "+"}
-                        {Math.abs(calcTotal).toLocaleString()}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={cancelCalc}
-                        aria-label="Cancel calculation"
-                        className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition hover:bg-gray-100"
-                      >
-                        <ArrowLeft size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <span
-                      className={`text-xl font-semibold ${
-                        net >= 0 ? "text-green-600" : "text-red-600"
-                      }`}
-                    >
-                      {symbol}
-                      {net < 0 ? "-" : "+"}
-                      {Math.abs(net).toLocaleString()}
-                    </span>
-                  )}
+                  <span
+                    className={`shrink-0 text-xl font-semibold ${
+                      net >= 0 ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    {symbol}
+                    {net < 0 ? "-" : "+"}
+                    {Math.abs(net).toLocaleString()}
+                  </span>
                 </div>
 
                 {calcActive && (
-                  <p className="px-1 text-xs text-gray-500">
+                  <p className="text-xs text-gray-500">
                     Tap tiles to add their signed amounts
                   </p>
+                )}
+
+                <div className="flex items-center justify-between gap-2">
+                  {hasDateFilter ? (
+                    <p className="truncate text-xs text-gray-500">{rangeLabel}</p>
+                  ) : (
+                    <span aria-hidden />
+                  )}
+                  <div className="relative flex shrink-0 items-center">
+                    {calendarOpen && (
+                      <button
+                        type="button"
+                        aria-label="Close date filter"
+                        onClick={() => setCalendarOpen(false)}
+                        className="fixed inset-0 z-40 cursor-default"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setCalendarOpen((value) => !value)}
+                      aria-label="Filter by date range"
+                      aria-expanded={calendarOpen}
+                      className="relative z-50 shrink-0 rounded-full border border-gray-200 p-1.5 text-gray-600 transition hover:bg-gray-100 hover:text-blue-600"
+                    >
+                      <Calendar size={16} />
+                      {hasDateFilter && (
+                        <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-blue-600 ring-2 ring-white" />
+                      )}
+                    </button>
+
+                    {calendarOpen && (
+                      <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl border border-gray-200 bg-white p-4 shadow-lg">
+                        <p className="mb-3 text-sm font-semibold text-gray-900">
+                          Filter by date
+                        </p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="flex flex-col gap-1 text-xs font-medium text-gray-500">
+                            From
+                            <input
+                              type="date"
+                              value={dateFrom}
+                              max={dateTo || getTodayString()}
+                              onChange={(e) => {
+                                setDateFrom(e.target.value);
+                                setSelectedMonth(null);
+                                cancelCalc();
+                              }}
+                              className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-xs font-medium text-gray-500">
+                            To
+                            <input
+                              type="date"
+                              value={dateTo}
+                              min={dateFrom || undefined}
+                              max={getTodayString()}
+                              onChange={(e) => {
+                                setDateTo(e.target.value);
+                                setSelectedMonth(null);
+                                cancelCalc();
+                              }}
+                              className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            />
+                          </label>
+                        </div>
+                        <div className="mt-4 flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDateFrom("");
+                              setDateTo("");
+                              setSelectedMonth(null);
+                              cancelCalc();
+                            }}
+                            disabled={!hasDateFilter}
+                            className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Clear
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCalendarOpen(false)}
+                            className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {calcActive && (
+                  <div className="fixed right-3 top-1/2 z-40 flex -translate-y-1/2 items-center gap-2 rounded-2xl border border-gray-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur">
+                    <span
+                      className={`text-base font-semibold ${
+                        calcTotal >= 0 ? "text-green-600" : "text-red-600"
+                      }`}
+                    >
+                      {symbol}
+                      {calcTotal < 0 ? "-" : "+"}
+                      {Math.abs(calcTotal).toLocaleString()}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={cancelCalc}
+                      aria-label="Cancel calculation"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition hover:bg-gray-100"
+                    >
+                      <ArrowLeft size={14} />
+                    </button>
+                  </div>
                 )}
 
                 <div className="space-y-2">

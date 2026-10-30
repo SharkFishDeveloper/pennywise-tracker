@@ -45,6 +45,7 @@ const BarChart = ({
 
   const ticks = [0, 0.25, 0.5, 0.75, 1];
   const showValues = data.length <= 10;
+  const labelStep = Math.max(1, Math.ceil(data.length / 10));
   const labelY = baseline + 14;
 
   return (
@@ -104,16 +105,20 @@ const BarChart = ({
               </text>
             )}
 
-            <text
-              x={rotate ? center + 4 : center}
-              y={rotate ? labelY : H - 9}
-              textAnchor={rotate ? "end" : "middle"}
-              fontSize="9.5"
-              fill="#6b7280"
-              transform={rotate ? `rotate(-45 ${center + 4} ${labelY})` : undefined}
-            >
-              {d.label}
-            </text>
+            {(i % labelStep === 0 || i === data.length - 1) && (
+              <text
+                x={rotate ? center + 4 : center}
+                y={rotate ? labelY : H - 9}
+                textAnchor={rotate ? "end" : "middle"}
+                fontSize="9.5"
+                fill="#6b7280"
+                transform={
+                  rotate ? `rotate(-45 ${center + 4} ${labelY})` : undefined
+                }
+              >
+                {d.label}
+              </text>
+            )}
           </g>
         );
       })}

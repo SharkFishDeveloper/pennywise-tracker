@@ -3,7 +3,7 @@
 import { CURRENCY } from "@/currency";
 import { db } from "@/db";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Plus, X, Search, Pencil, Trash2 } from "lucide-react";
 import { INCOME_ICONS, type IncomeIconName } from "@/IncomeIcons";
 import PieChart, { PIE_COLORS, type Slice } from "@/components/charts/PieChart";
@@ -17,10 +17,34 @@ const ranges: { value: Range; label: string; days: number }[] = [
   { value: "week", label: "1 Week", days: 7 },
 ];
 
-const MAX_DATES = 16;
+const toDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
-const withinDays = (date: string, days: number) => {
-  const cutoff = new Date();
+const buildDateSeries = (days: number, reference: Date | null) => {
+  if (!reference) return [];
+
+  const end = new Date(reference);
+  end.setHours(0, 0, 0, 0);
+  const start = new Date(end);
+  start.setDate(start.getDate() - (days - 1));
+
+  const dates: string[] = [];
+  for (
+    let cursor = new Date(start);
+    cursor <= end;
+    cursor.setDate(cursor.getDate() + 1)
+  ) {
+    dates.push(toDateKey(cursor));
+  }
+  return dates;
+};
+
+const withinDays = (date: string, days: number, reference: Date) => {
+  const cutoff = new Date(reference);
   cutoff.setHours(0, 0, 0, 0);
   cutoff.setDate(cutoff.getDate() - (days - 1));
   return new Date(`${date}T00:00:00`).getTime() >= cutoff.getTime();
@@ -52,6 +76,11 @@ const Accounts = () => {
   const [range, setRange] = useState<Range>("month");
   const [barAccount, setBarAccount] = useState<string>("all");
   const [selectedSlice, setSelectedSlice] = useState<string | null>(null);
+  const [today, setToday] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setToday(new Date());
+  }, []);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -75,16 +104,18 @@ const Accounts = () => {
       (accounts ?? []).map((item) => [String(item.id), item.name])
     );
 
-    const filtered = (expenses ?? [])
-      .filter((row) => withinDays(row.date, days))
-      .map((row) => ({
-        date: row.date,
-        amount: row.amount,
-        currency: row.currency,
-        accountName: row.account
-          ? (accountNames.get(row.account) ?? "Unknown account")
-          : "Unknown account",
-      }));
+    const filtered = today
+      ? (expenses ?? [])
+          .filter((row) => withinDays(row.date, days, today))
+          .map((row) => ({
+            date: row.date,
+            amount: row.amount,
+            currency: row.currency,
+            accountName: row.account
+              ? (accountNames.get(row.account) ?? "Unknown account")
+              : "Unknown account",
+          }))
+      : [];
 
     const groupTotals = new Map<string, number>();
     const currencyCount = new Map<string, number>();
@@ -114,7 +145,7 @@ const Accounts = () => {
       total: sorted.reduce((sum, [, value]) => sum + value, 0),
       symbol: CURRENCY[currency as keyof typeof CURRENCY]?.symbol ?? "",
     };
-  }, [expenses, accounts, range]);
+  }, [expenses, accounts, range, today]);
 
   const activeAccount =
     barAccount !== "all" &&
@@ -130,14 +161,15 @@ const Accounts = () => {
       dailyTotals.set(row.date, (dailyTotals.get(row.date) ?? 0) + row.amount);
     });
 
-    const dateKeys = [...dailyTotals.keys()].sort().slice(-MAX_DATES);
+    const days = ranges.find((item) => item.value === range)?.days ?? 30;
+    const dateKeys = buildDateSeries(days, today);
 
     return dateKeys.map((date) => ({
       label: shortDate(date),
       value: dailyTotals.get(date) ?? 0,
       date,
     }));
-  }, [rows, activeAccount]);
+  }, [rows, activeAccount, range, today]);
 
   const barTotal = barPoints.reduce((sum, point) => sum + point.value, 0);
 
@@ -223,7 +255,7 @@ const Accounts = () => {
     }
   };
 
-  if (accounts === undefined || expenses === undefined) {
+  if (accounts === undefined || expenses === undefined || !today) {
     return <p className="p-6 text-gray-500">Loading accounts...</p>;
   }
 

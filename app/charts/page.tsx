@@ -1,12 +1,12 @@
 "use client";
 
 import { CURRENCY } from "@/currency";
-import { db } from "@/db";
+import { db, type Expense, type Income } from "@/db";
 import { AVAILABLE_ICONS } from "@/ExpenseIcons";
 import { INCOME_ICONS } from "@/IncomeIcons";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { LucideIcon } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import PieChart, { PIE_COLORS } from "@/components/charts/PieChart";
 import LineChart from "@/components/charts/LineChart";
 import BarChart from "@/components/charts/BarChart";
@@ -26,8 +26,8 @@ const ranges: { value: Range; label: string; days: number | null }[] = [
   { value: "week", label: "1 Week", days: 7 },
 ];
 
-const withinDays = (date: string, days: number) => {
-  const cutoff = new Date();
+const withinDays = (date: string, days: number, reference: Date) => {
+  const cutoff = new Date(reference);
   cutoff.setHours(0, 0, 0, 0);
   cutoff.setDate(cutoff.getDate() - (days - 1));
   return new Date(`${date}T00:00:00`).getTime() >= cutoff.getTime();
@@ -60,7 +60,111 @@ const fullDate = (value: string) =>
     year: "numeric",
   });
 
-const MAX_DATES = 16;
+const toDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const buildDateSeries = (
+  rows: { date: string }[],
+  days: number | null,
+  reference: Date | null
+) => {
+  if (days === null) {
+    return [...new Set(rows.map((row) => row.date))].sort();
+  }
+
+  if (!reference) return [];
+
+  const end = new Date(reference);
+  end.setHours(0, 0, 0, 0);
+  const start = new Date(end);
+  start.setDate(start.getDate() - (days - 1));
+
+  const dates: string[] = [];
+  for (
+    let cursor = new Date(start);
+    cursor <= end;
+    cursor.setDate(cursor.getDate() + 1)
+  ) {
+    dates.push(toDateKey(cursor));
+  }
+  return dates;
+};
+
+const tileDate = (value: string) =>
+  new Date(`${value}T00:00:00`).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+const TransactionTiles = ({
+  rows,
+  groupName,
+  mode,
+  categoryNames,
+  accountNames,
+  Icon,
+}: {
+  rows: (Expense | Income)[];
+  groupName: string;
+  mode: Mode;
+  categoryNames: Map<number, string>;
+  accountNames: Map<string, string>;
+  Icon: LucideIcon;
+}) => (
+  <div className="space-y-2">
+    {rows.map((row, index) => {
+      const isExpense = mode === "Expense";
+      const categoryName = isExpense
+        ? categoryNames.get(row.categoryId ?? -1) ?? "Uncategorized"
+        : null;
+      const accountName = row.account
+        ? accountNames.get(row.account) ?? "Unknown account"
+        : null;
+      const subtitle = [categoryName, accountName].filter(Boolean).join(" · ");
+      const symbol = CURRENCY[row.currency]?.symbol ?? "";
+
+      return (
+        <div
+          key={`${row.date}-${index}`}
+          className="flex w-full items-center gap-2.5 rounded-xl border border-gray-200 p-2.5"
+        >
+          <div
+            className={`shrink-0 rounded-lg p-2 ${
+              isExpense ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"
+            }`}
+          >
+            <Icon size={20} />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">
+              {row.title || groupName}
+            </p>
+            <p className="truncate text-xs text-gray-500">
+              {subtitle ? `${subtitle} · ` : ""}
+              {tileDate(row.date)}
+            </p>
+          </div>
+
+          <p
+            className={`shrink-0 text-sm font-semibold ${
+              isExpense ? "text-red-600" : "text-green-600"
+            }`}
+          >
+            {isExpense ? "-" : "+"}
+            {symbol}
+            {row.amount.toLocaleString()}
+          </p>
+        </div>
+      );
+    })}
+  </div>
+);
 
 const Charts = () => {
   const [mode, setMode] = useState<Mode>("Expense");
@@ -68,6 +172,11 @@ const Charts = () => {
   const [group, setGroup] = useState<string>("all");
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<number | null>(null);
+  const [today, setToday] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setToday(new Date());
+  }, []);
 
   const expenses = useLiveQuery(() => db.expenses.toArray(), []);
   const incomes = useLiveQuery(() => db.incomes.toArray(), []);
@@ -77,7 +186,9 @@ const Charts = () => {
   const rangeDays = ranges.find((item) => item.value === range)?.days ?? null;
   const allRows = mode === "Expense" ? (expenses ?? []) : (incomes ?? []);
   const rows = rangeDays
-    ? allRows.filter((row) => withinDays(row.date, rangeDays))
+    ? today
+      ? allRows.filter((row) => withinDays(row.date, rangeDays, today))
+      : []
     : allRows;
 
   const { slices, total, symbol, centerLabel, linePoints, lineColor } =
@@ -114,7 +225,7 @@ const Charts = () => {
 
       const sorted = [...groupTotals.entries()].sort((a, b) => b[1] - a[1]);
 
-      const dateKeys = [...dailyTotals.keys()].sort().slice(-MAX_DATES);
+      const dateKeys = buildDateSeries(rows, rangeDays, today);
 
       return {
         slices: sorted.map(([name, value], index) => ({
@@ -132,7 +243,7 @@ const Charts = () => {
         })),
         lineColor: mode === "Expense" ? "#ef4444" : "#16a34a",
       };
-    }, [rows, categories, accounts, mode]);
+    }, [rows, categories, accounts, mode, rangeDays, today]);
 
   const groupNames = slices.map((slice) => slice.name);
   const activeGroup =
@@ -142,11 +253,8 @@ const Charts = () => {
     if (activeGroup === "all") return [];
 
     const dailyTotals = new Map<string, number>();
-    const allDates = new Set<string>();
 
     rows.forEach((row) => {
-      allDates.add(row.date);
-
       const name =
         mode === "Expense"
           ? (categories?.find((item) => item.id === row.categoryId)?.name ??
@@ -161,21 +269,21 @@ const Charts = () => {
       dailyTotals.set(row.date, (dailyTotals.get(row.date) ?? 0) + row.amount);
     });
 
-    const dateKeys = [...allDates].sort().slice(-MAX_DATES);
+    const dateKeys = buildDateSeries(rows, rangeDays, today);
 
     return dateKeys.map((date) => ({
       label: shortDate(date),
       value: dailyTotals.get(date) ?? 0,
       date,
     }));
-  }, [rows, categories, accounts, mode, activeGroup]);
+  }, [rows, categories, accounts, mode, activeGroup, rangeDays, today]);
 
   const barTotal = barPoints.reduce((sum, point) => sum + point.value, 0);
 
   const barColor =
     slices.find((slice) => slice.name === activeGroup)?.color ?? lineColor;
 
-  if (!expenses || !incomes || !categories || !accounts) {
+  if (!expenses || !incomes || !categories || !accounts || !today) {
     return <p className="p-6 text-gray-500">Loading charts...</p>;
   }
 
@@ -189,6 +297,31 @@ const Charts = () => {
       iconMap[item.name] = INCOME_ICONS[item.icon] ?? INCOME_ICONS.Wallet;
     });
   }
+
+  const categoryNameById = new Map<number, string>(
+    categories.map((item) => [item.id ?? -1, item.name])
+  );
+  const accountNameById = new Map<string, string>(
+    accounts.map((item) => [String(item.id), item.name])
+  );
+
+  const nameOf = (row: Expense | Income) =>
+    mode === "Expense"
+      ? categoryNameById.get(row.categoryId ?? -1) ?? "Uncategorized"
+      : row.account
+        ? accountNameById.get(row.account) ?? "Unknown account"
+        : "Unknown account";
+
+  const detailGroup = activeGroup !== "all" ? activeGroup : selected;
+  const detailRows = detailGroup
+    ? rows
+        .filter((row) => nameOf(row) === detailGroup)
+        .sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1))
+    : [];
+  const detailIcon = detailGroup
+    ? iconMap[detailGroup] ??
+      (mode === "Expense" ? AVAILABLE_ICONS.Ellipsis : INCOME_ICONS.Wallet)
+    : AVAILABLE_ICONS.Ellipsis;
 
   const changeMode = (value: Mode) => {
     setMode(value);
@@ -356,6 +489,19 @@ const Charts = () => {
                   {barTotal.toLocaleString()}
                 </span>
               </div>
+            </Card>
+          )}
+
+          {detailGroup && detailRows.length > 0 && (
+            <Card title={`${detailGroup} transactions`}>
+              <TransactionTiles
+                rows={detailRows}
+                groupName={detailGroup}
+                mode={mode}
+                categoryNames={categoryNameById}
+                accountNames={accountNameById}
+                Icon={detailIcon}
+              />
             </Card>
           )}
 
