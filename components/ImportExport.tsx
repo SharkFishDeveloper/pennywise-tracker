@@ -533,9 +533,9 @@ const ImportExport = ({
       const totalChangePct =
         previousTotal > 0 ? (totalChange / previousTotal) * 100 : null;
 
-      doc.gap(14);
+      doc.gap(10);
       doc.text(monthLabelOf(key), { size: 14, bold: true });
-      doc.gap(4);
+      doc.gap(10);
       doc.text(`Total expenses: ${money(monthTotal)}`, {
         size: 10,
         color: GRAY_PDF,
@@ -594,7 +594,7 @@ const ImportExport = ({
         doc.gap(15);
       });
 
-      doc.gap(10);
+      doc.gap(18);
       doc.text(`Compared with ${monthLabelOf(previousKey)}`, {
         size: 11,
         bold: true,
