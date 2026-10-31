@@ -1,7 +1,7 @@
 "use client";
 
 import { CURRENCY, type CurrencyCode } from "@/currency";
-import { db } from "@/db";
+import { db, type Budget } from "@/db";
 import { ReportPdf } from "@/pdf";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Download, FileText, FileUp, X } from "lucide-react";
@@ -84,6 +84,55 @@ const formatExportDate = (value: string) =>
     year: "numeric",
   });
 
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+const parseYmd = (value: string) => new Date(`${value}T00:00:00`);
+
+const addDaysTo = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const addMonthsTo = (date: Date, months: number) => {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+};
+
+const ymd = (date: Date) =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+const budgetPeriodEnd = (budget: Budget) => {
+  const start = parseYmd(budget.date);
+  switch (budget.time) {
+    case "1 day":
+      return addDaysTo(start, 1);
+    case "1 week":
+      return addDaysTo(start, 7);
+    case "15 days":
+      return addDaysTo(start, 15);
+    case "1 month":
+      return addMonthsTo(start, 1);
+    default:
+      return budget.endDate ? parseYmd(budget.endDate) : start;
+  }
+};
+
+const monthKeyOf = (date: string) => date.slice(0, 7);
+
+const monthLabelOf = (key: string) =>
+  new Date(`${key}-01T00:00:00`).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+
+const previousMonthKey = (key: string) => {
+  const [year, month] = key.split("-").map(Number);
+  const date = new Date(year, month - 2, 1);
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
+};
+
 type ImportResult = {
   expenses: number;
   incomes: number;
@@ -103,6 +152,7 @@ const ImportExport = ({
   const incomes = useLiveQuery(() => db.incomes.toArray(), []);
   const accounts = useLiveQuery(() => db.accounts.toArray(), []);
   const categories = useLiveQuery(() => db.categories.toArray(), []);
+  const budgets = useLiveQuery(() => db.budgets.toArray(), []);
 
   const [mode, setMode] = useState<"menu" | "import">("menu");
   const [busy, setBusy] = useState(false);
@@ -347,6 +397,7 @@ const ImportExport = ({
   const handleExportPdf = () => {
     const expenseRows = expenses ?? [];
     const incomeRows = incomes ?? [];
+    const budgetRows = budgets ?? [];
     const categoryNames = new Map(
       (categories ?? []).map((item) => [item.id, item.name])
     );
@@ -371,22 +422,24 @@ const ImportExport = ({
     const totalExpense = expenseRows.reduce((sum, item) => sum + item.amount, 0);
     const net = totalIncome - totalExpense;
 
-    const categoryTotals = new Map<string, number>();
-    expenseRows.forEach((item) => {
-      const name = categoryNames.get(item.categoryId) ?? "Uncategorized";
-      categoryTotals.set(name, (categoryTotals.get(name) ?? 0) + item.amount);
-    });
+    const categoryNameOf = (categoryId: number) =>
+      categoryNames.get(categoryId) ?? "Uncategorized";
 
-    const categoryRows = [...categoryTotals.entries()].sort(
-      (a, b) => b[1] - a[1]
-    );
+    const categoryTotalsFor = (rows: typeof expenseRows) => {
+      const totals = new Map<string, number>();
+      rows.forEach((item) => {
+        const name = categoryNameOf(item.categoryId);
+        totals.set(name, (totals.get(name) ?? 0) + item.amount);
+      });
+      return totals;
+    };
 
     const transactions = [
       ...expenseRows.map((item) => ({
         date: item.date,
         type: "Expense" as const,
         title: item.title ?? "",
-        category: categoryNames.get(item.categoryId) ?? "Uncategorized",
+        category: categoryNameOf(item.categoryId),
         account: accountNames.get(item.account) ?? "",
         amount: item.amount,
       })),
@@ -413,6 +466,8 @@ const ImportExport = ({
     const clip = (value: string, max: number) =>
       value.length > max ? `${value.slice(0, max - 1)}…` : value;
     const money = (value: number) => `${symbol}${value.toLocaleString()}`;
+    const signedMoney = (value: number) =>
+      `${value > 0 ? "+" : value < 0 ? "-" : ""}${money(Math.abs(value))}`;
 
     const doc = new ReportPdf();
     const right = doc.width - doc.margin;
@@ -446,76 +501,80 @@ const ImportExport = ({
     doc.text(money(net), { size: 11, bold: true, x: right, align: "right" });
     doc.gap(30);
 
-    doc.text("Expenses by category", { size: 13, bold: true });
-    doc.gap(18);
-    doc.text("Category", { size: 9, bold: true, color: GRAY_PDF });
-    doc.text("Amount", {
-      size: 9,
-      bold: true,
-      color: GRAY_PDF,
-      x: doc.margin + 330,
-      align: "right",
-    });
-    doc.text("Share", {
-      size: 9,
-      bold: true,
-      color: GRAY_PDF,
-      x: right,
-      align: "right",
-    });
-    doc.gap(4);
-    doc.line(doc.margin, right);
-    doc.gap(16);
+    const months = [
+      ...new Set(transactions.map((item) => monthKeyOf(item.date))),
+    ].sort((a, b) => (a < b ? 1 : -1));
 
-    if (categoryRows.length === 0) {
-      doc.text("No expenses.", { size: 10, color: GRAY_PDF });
-      doc.gap(16);
-    } else {
-      categoryRows.forEach(([name, value]) => {
-        const pct = totalExpense > 0 ? (value / totalExpense) * 100 : 0;
-        doc.text(clip(name, 34), { size: 10 });
-        doc.text(money(value), { size: 10, x: doc.margin + 330, align: "right" });
-        doc.text(pct >= 1 ? `${Math.round(pct)}%` : `${pct.toFixed(1)}%`, {
-          size: 10,
-          x: right,
-          align: "right",
-        });
-        doc.gap(16);
-      });
+    if (months.length === 0) {
+      doc.text("No transactions.", { size: 10, color: GRAY_PDF });
     }
 
-    doc.gap(18);
-    doc.text("All transactions", { size: 13, bold: true });
-    doc.gap(18);
-    doc.text("Date", { size: 9, bold: true, color: GRAY_PDF, x: doc.margin });
-    doc.text("Title", { size: 9, bold: true, color: GRAY_PDF, x: doc.margin + 60 });
-    doc.text("Category", {
-      size: 9,
-      bold: true,
-      color: GRAY_PDF,
-      x: doc.margin + 180,
-    });
-    doc.text("Account", {
-      size: 9,
-      bold: true,
-      color: GRAY_PDF,
-      x: doc.margin + 285,
-    });
-    doc.text("Amount", {
-      size: 9,
-      bold: true,
-      color: GRAY_PDF,
-      x: right,
-      align: "right",
-    });
-    doc.gap(4);
-    doc.line(doc.margin, right);
-    doc.gap(16);
+    months.forEach((key) => {
+      const monthTransactions = transactions.filter(
+        (item) => monthKeyOf(item.date) === key
+      );
+      const currentExpenses = expenseRows.filter(
+        (item) => monthKeyOf(item.date) === key
+      );
+      const previousKey = previousMonthKey(key);
+      const previousExpenses = expenseRows.filter(
+        (item) => monthKeyOf(item.date) === previousKey
+      );
 
-    if (transactions.length === 0) {
-      doc.text("No transactions.", { size: 10, color: GRAY_PDF });
-    } else {
-      transactions.forEach((item) => {
+      const monthTotal = currentExpenses.reduce(
+        (sum, item) => sum + item.amount,
+        0
+      );
+      const previousTotal = previousExpenses.reduce(
+        (sum, item) => sum + item.amount,
+        0
+      );
+      const totalChange = monthTotal - previousTotal;
+      const totalChangePct =
+        previousTotal > 0 ? (totalChange / previousTotal) * 100 : null;
+
+      doc.gap(14);
+      doc.text(monthLabelOf(key), { size: 14, bold: true });
+      doc.gap(4);
+      doc.text(`Total expenses: ${money(monthTotal)}`, {
+        size: 10,
+        color: GRAY_PDF,
+      });
+      doc.gap(18);
+
+      doc.text("Transactions", { size: 11, bold: true });
+      doc.gap(16);
+      doc.text("Date", { size: 9, bold: true, color: GRAY_PDF, x: doc.margin });
+      doc.text("Title", {
+        size: 9,
+        bold: true,
+        color: GRAY_PDF,
+        x: doc.margin + 60,
+      });
+      doc.text("Category", {
+        size: 9,
+        bold: true,
+        color: GRAY_PDF,
+        x: doc.margin + 180,
+      });
+      doc.text("Account", {
+        size: 9,
+        bold: true,
+        color: GRAY_PDF,
+        x: doc.margin + 285,
+      });
+      doc.text("Amount", {
+        size: 9,
+        bold: true,
+        color: GRAY_PDF,
+        x: right,
+        align: "right",
+      });
+      doc.gap(4);
+      doc.line(doc.margin, right);
+      doc.gap(16);
+
+      monthTransactions.forEach((item) => {
         doc.text(clip(formatExportDate(item.date), 12), {
           size: 9,
           x: doc.margin,
@@ -534,7 +593,215 @@ const ImportExport = ({
         );
         doc.gap(15);
       });
-    }
+
+      doc.gap(10);
+      doc.text(`Compared with ${monthLabelOf(previousKey)}`, {
+        size: 11,
+        bold: true,
+      });
+      doc.gap(16);
+
+      doc.text("Expenses this month", { size: 10, color: GRAY_PDF });
+      doc.text(money(monthTotal), { size: 10, x: right, align: "right" });
+      doc.gap(15);
+      doc.text("Expenses previous month", { size: 10, color: GRAY_PDF });
+      doc.text(money(previousTotal), { size: 10, x: right, align: "right" });
+      doc.gap(15);
+      doc.text("Change", { size: 10, bold: true });
+      doc.text(
+        `${signedMoney(totalChange)}${
+          totalChangePct === null
+            ? ""
+            : ` (${totalChangePct > 0 ? "+" : ""}${totalChangePct.toFixed(1)}%)`
+        }`,
+        {
+          size: 10,
+          bold: true,
+          x: right,
+          align: "right",
+          color:
+            totalChange > 0
+              ? RED_PDF
+              : totalChange < 0
+                ? GREEN_PDF
+                : GRAY_PDF,
+        }
+      );
+      doc.gap(22);
+
+      const currentCategories = categoryTotalsFor(currentExpenses);
+      const previousCategories = categoryTotalsFor(previousExpenses);
+      const categoryNamesThisMonth = [
+        ...new Set([
+          ...currentCategories.keys(),
+          ...previousCategories.keys(),
+        ]),
+      ].sort((a, b) => {
+        const currentDiff =
+          (currentCategories.get(b) ?? 0) - (currentCategories.get(a) ?? 0);
+        if (currentDiff !== 0) return currentDiff;
+        return (
+          (previousCategories.get(b) ?? 0) -
+          (previousCategories.get(a) ?? 0)
+        );
+      });
+
+      doc.text("Categories", { size: 11, bold: true });
+      doc.gap(16);
+      doc.text("Category", {
+        size: 9,
+        bold: true,
+        color: GRAY_PDF,
+        x: doc.margin,
+      });
+      doc.text("This month", {
+        size: 9,
+        bold: true,
+        color: GRAY_PDF,
+        x: doc.margin + 220,
+        align: "right",
+      });
+      doc.text("Previous", {
+        size: 9,
+        bold: true,
+        color: GRAY_PDF,
+        x: doc.margin + 380,
+        align: "right",
+      });
+      doc.text("Change", {
+        size: 9,
+        bold: true,
+        color: GRAY_PDF,
+        x: right,
+        align: "right",
+      });
+      doc.gap(4);
+      doc.line(doc.margin, right);
+      doc.gap(16);
+
+      if (categoryNamesThisMonth.length === 0) {
+        doc.text("No expenses.", { size: 10, color: GRAY_PDF });
+        doc.gap(16);
+      } else {
+        categoryNamesThisMonth.forEach((name) => {
+          const current = currentCategories.get(name) ?? 0;
+          const previous = previousCategories.get(name) ?? 0;
+          const change = current - previous;
+          const changePct = previous > 0 ? (change / previous) * 100 : null;
+
+          doc.text(clip(name, 30), { size: 10 });
+          doc.text(money(current), {
+            size: 10,
+            x: doc.margin + 220,
+            align: "right",
+          });
+          doc.text(money(previous), {
+            size: 10,
+            x: doc.margin + 380,
+            align: "right",
+          });
+          doc.text(
+            change === 0
+              ? "—"
+              : `${signedMoney(change)}${
+                  changePct === null
+                    ? ""
+                    : ` (${changePct > 0 ? "+" : ""}${changePct.toFixed(0)}%)`
+                }`,
+            {
+              size: 10,
+              x: right,
+              align: "right",
+              color: change > 0 ? RED_PDF : change < 0 ? GREEN_PDF : GRAY_PDF,
+            }
+          );
+          doc.gap(15);
+        });
+      }
+
+      const exceededBudgets = budgetRows
+        .filter((budget) => monthKeyOf(budget.date) === key)
+        .map((budget) => {
+          const startStr = budget.date;
+          const endStr = ymd(budgetPeriodEnd(budget));
+          const spent = expenseRows
+            .filter(
+              (item) =>
+                (budget.categoryId === null ||
+                  item.categoryId === budget.categoryId) &&
+                item.date >= startStr &&
+                item.date <= endStr
+            )
+            .reduce((sum, item) => sum + item.amount, 0);
+          return { budget, spent };
+        })
+        .filter((entry) => entry.spent > entry.budget.amount);
+
+      if (exceededBudgets.length > 0) {
+        doc.gap(10);
+        doc.text("Budgets exceeded", { size: 11, bold: true });
+        doc.gap(16);
+        doc.text("Budget", {
+          size: 9,
+          bold: true,
+          color: GRAY_PDF,
+          x: doc.margin,
+        });
+        doc.text("Limit", {
+          size: 9,
+          bold: true,
+          color: GRAY_PDF,
+          x: doc.margin + 260,
+          align: "right",
+        });
+        doc.text("Spent", {
+          size: 9,
+          bold: true,
+          color: GRAY_PDF,
+          x: doc.margin + 390,
+          align: "right",
+        });
+        doc.text("Over by", {
+          size: 9,
+          bold: true,
+          color: GRAY_PDF,
+          x: right,
+          align: "right",
+        });
+        doc.gap(4);
+        doc.line(doc.margin, right);
+        doc.gap(16);
+
+        exceededBudgets.forEach(({ budget, spent }) => {
+          const label =
+            budget.title?.trim() ||
+            (budget.categoryId === null
+              ? "All expenses"
+              : categoryNames.get(budget.categoryId) ?? "Uncategorized");
+
+          doc.text(clip(label, 32), { size: 10 });
+          doc.text(money(budget.amount), {
+            size: 10,
+            x: doc.margin + 260,
+            align: "right",
+          });
+          doc.text(money(spent), {
+            size: 10,
+            x: doc.margin + 390,
+            align: "right",
+          });
+          doc.text(signedMoney(spent - budget.amount), {
+            size: 10,
+            x: right,
+            align: "right",
+            color: RED_PDF,
+          });
+          doc.gap(15);
+        });
+      }
+
+      doc.gap(26);
+    });
 
     const blob = doc.build();
     const url = URL.createObjectURL(blob);
@@ -619,7 +886,8 @@ const ImportExport = ({
                   Export PDF report
                 </span>
                 <span className="block text-xs text-gray-500">
-                  Download a formatted report with totals and transactions.
+                  Download a formatted report with monthly expense comparisons,
+                  exceeded budgets and transactions.
                 </span>
               </span>
             </button>
