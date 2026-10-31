@@ -387,7 +387,10 @@ const Charts = () => {
   const barTotal = barPoints.reduce((sum, point) => sum + point.value, 0);
 
   const barColor =
-    slices.find((slice) => slice.name === activeGroup)?.color ?? lineColor;
+    slices.find(
+      (slice) =>
+        slice.name === (activeGroup !== "all" ? activeGroup : selected)
+    )?.color ?? lineColor;
 
   if (!expenses || !incomes || !categories || !accounts || !today) {
     return <p className="p-6 text-gray-500">Loading charts...</p>;
@@ -430,12 +433,12 @@ const Charts = () => {
     : AVAILABLE_ICONS.Ellipsis;
 
   const comparisonPeriods =
-    mode === "Expense" && detailGroup
-      ? buildComparisonPeriods(range, today)
-      : [];
+    mode === "Expense" ? buildComparisonPeriods(range, today) : [];
   const comparisonHistory =
-    mode === "Expense" && detailGroup
-      ? allRows.filter((row) => nameOf(row) === detailGroup)
+    mode === "Expense"
+      ? detailGroup
+        ? allRows.filter((row) => nameOf(row) === detailGroup)
+        : allRows
       : [];
   const comparisonData = comparisonPeriods.map((period) => ({
     label: period.label,
@@ -800,8 +803,12 @@ const Charts = () => {
             </>
           )}
 
-          {mode === "Expense" && detailGroup && hasComparisonData && (
-            <Card title={`${detailGroup} expected vs actual`}>
+          {mode === "Expense" && hasComparisonData && (
+            <Card
+              title={`${
+                detailGroup ?? "All categories"
+              } expected vs actual`}
+            >
               <p className="mb-3 text-xs text-gray-500">
                 Last 6 {comparisonUnit} · expected is the average of earlier{" "}
                 {comparisonUnit} · * latest {comparisonUnitSingular} includes
@@ -812,7 +819,9 @@ const Charts = () => {
                 symbol={symbol}
                 actualColor={barColor}
                 expectedColor="#6b7280"
-                ariaLabel={`Expected vs actual spending for ${detailGroup}`}
+                ariaLabel={`Expected vs actual spending for ${
+                  detailGroup ?? "all categories"
+                }`}
               />
             </Card>
           )}

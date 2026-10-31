@@ -5,10 +5,10 @@ type Point = {
 };
 
 const W = 640;
-const H = 260;
+const H = 280;
 const PAD_L = 46;
-const PAD_R = 14;
-const PAD_T = 16;
+const PAD_R = 16;
+const PAD_T = 24;
 const PAD_B = 30;
 
 const INNER_W = W - PAD_L - PAD_R;
@@ -43,25 +43,13 @@ const ExpectedActualChart = ({
     ...data.map((d) => d.expected)
   );
 
-  const x = (i: number) =>
-    data.length === 1
-      ? PAD_L + INNER_W / 2
-      : PAD_L + (INNER_W * i) / (data.length - 1);
+  const slot = INNER_W / Math.max(1, data.length);
+  const barW = Math.min(46, Math.max(8, slot * 0.5));
+  const baseline = PAD_T + INNER_H;
 
   const y = (v: number) => PAD_T + INNER_H - (v / maxVal) * INNER_H;
 
   const ticks = [0, 0.25, 0.5, 0.75, 1];
-  const labelStep = Math.max(1, Math.ceil(data.length / 6));
-
-  const actualPoints = data.map((d, i) => `${x(i)},${y(d.actual)}`).join(" ");
-  const expectedPoints = data
-    .map((d, i) => `${x(i)},${y(d.expected)}`)
-    .join(" ");
-
-  const actualArea =
-    data.length > 1
-      ? `${PAD_L},${y(0)} ${actualPoints} ${x(data.length - 1)},${y(0)}`
-      : null;
 
   const average = data.length
     ? data.reduce((sum, d) => sum + d.expected, 0) / data.length
@@ -72,7 +60,7 @@ const ExpectedActualChart = ({
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium text-gray-600">
         <span className="flex items-center gap-1.5">
           <span
-            className="inline-block h-0.5 w-4 rounded-full"
+            className="inline-block h-2.5 w-2.5 rounded-sm"
             style={{ backgroundColor: actualColor }}
           />
           Actual
@@ -117,42 +105,43 @@ const ExpectedActualChart = ({
           </g>
         ))}
 
-        {actualArea && (
-          <polygon points={actualArea} fill={actualColor} opacity="0.08" />
-        )}
+        {data.map((d, i) => {
+          const center = PAD_L + slot * i + slot / 2;
+          const barH = Math.max(d.actual > 0 ? 2 : 0, baseline - y(d.actual));
 
-        <polyline
-          points={expectedPoints}
-          fill="none"
-          stroke={expectedColor}
-          strokeWidth="2"
-          strokeDasharray="6 5"
-          strokeLinecap="round"
-        />
+          return (
+            <g key={`${d.label}-${i}`}>
+              <rect
+                x={center - barW / 2}
+                y={baseline - barH}
+                width={barW}
+                height={barH}
+                rx="4"
+                fill={actualColor}
+              >
+                <title>
+                  {`${d.label}: ${symbol}${Math.round(
+                    d.actual
+                  ).toLocaleString()} actual, ${symbol}${Math.round(
+                    d.expected
+                  ).toLocaleString()} expected`}
+                </title>
+              </rect>
 
-        <polyline
-          points={actualPoints}
-          fill="none"
-          stroke={actualColor}
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+              {d.actual > 0 && (
+                <text
+                  x={center}
+                  y={baseline - barH - 4}
+                  textAnchor="middle"
+                  fontSize="9.5"
+                  fill="#6b7280"
+                >
+                  {formatAxis(d.actual)}
+                </text>
+              )}
 
-        {data.map((d, i) => (
-          <g key={`${d.label}-${i}`}>
-            <circle cx={x(i)} cy={y(d.actual)} r="3.5" fill={actualColor}>
-              <title>
-                {`${d.label}: ${symbol}${Math.round(
-                  d.actual
-                ).toLocaleString()} actual, ${symbol}${Math.round(
-                  d.expected
-                ).toLocaleString()} expected`}
-              </title>
-            </circle>
-            {(i % labelStep === 0 || i === data.length - 1) && (
               <text
-                x={x(i)}
+                x={center}
                 y={H - 9}
                 textAnchor="middle"
                 fontSize="9.5"
@@ -160,15 +149,28 @@ const ExpectedActualChart = ({
               >
                 {d.label}
               </text>
-            )}
-          </g>
-        ))}
+            </g>
+          );
+        })}
+
+        {average > 0 && (
+          <line
+            x1={PAD_L}
+            x2={W - PAD_R}
+            y1={y(average)}
+            y2={y(average)}
+            stroke={expectedColor}
+            strokeWidth="1.5"
+            strokeDasharray="6 5"
+            strokeLinecap="round"
+          />
+        )}
 
         <line
           x1={PAD_L}
           x2={W - PAD_R}
-          y1={y(0)}
-          y2={y(0)}
+          y1={baseline}
+          y2={baseline}
           stroke="#d1d5db"
         />
       </svg>
