@@ -14,6 +14,7 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ArrowLeft,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -22,6 +23,7 @@ import ImportExport from "@/components/ImportExport";
 import Transaction from "@/components/Transaction";
 
 type Filter = "All" | "Expense" | "Income" | "Estimate";
+type ViewMode = "detail" | "daily";
 
 type ReportRow = {
   key: string;
@@ -68,6 +70,8 @@ const Reports = () => {
   const recurrences = useLiveQuery(() => db.recurrences.toArray(), []);
 
   const [filter, setFilter] = useState<Filter>("All");
+  const [view, setView] = useState<ViewMode>("detail");
+  const [expandedDays, setExpandedDays] = useState<string[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ReportRow | null>(null);
   const [now, setNow] = useState<Date | null>(null);
@@ -233,6 +237,96 @@ const Reports = () => {
     }
   };
 
+  const dayGroups = (() => {
+    const map = new Map<string, ReportRow[]>();
+    currentGroup.forEach((row) => {
+      const group = map.get(row.date);
+      if (group) group.push(row);
+      else map.set(row.date, [row]);
+    });
+    return [...map.entries()];
+  })();
+
+  const renderRow = (row: ReportRow) => {
+    const isExpense = row.type === "Expense";
+    const categoryName = isExpense
+      ? categoryNames.get(row.categoryId ?? -1) ?? "Uncategorized"
+      : null;
+    const accountName = row.account
+      ? accountNames.get(row.account) ?? "Unknown account"
+      : null;
+    const RowIcon = isExpense
+      ? AVAILABLE_ICONS[
+          categoryIcons.get(row.categoryId ?? -1) ?? "Ellipsis"
+        ] ?? AVAILABLE_ICONS.Ellipsis
+      : INCOME_ICONS[accountIcons.get(row.account ?? "") ?? "Wallet"];
+    const subtitle = [categoryName, accountName].filter(Boolean).join(" · ");
+    const isBase = calcActive && row.key === calcBaseKey;
+    const isApplied = calcActive && calcApplied[row.key] !== undefined;
+    const rowSymbol = CURRENCY[row.currency]?.symbol ?? "";
+
+    return (
+      <button
+        key={row.key}
+        type="button"
+        onPointerDown={() => startLongPress(row)}
+        onPointerUp={cancelLongPress}
+        onPointerLeave={cancelLongPress}
+        onPointerCancel={cancelLongPress}
+        onContextMenu={(event) => event.preventDefault()}
+        onClick={() => {
+          if (longPressTriggered.current) {
+            longPressTriggered.current = false;
+            return;
+          }
+          if (calcActive) {
+            handleCalcTap(row);
+            return;
+          }
+          setEditingRow(row);
+          setEditorOpen(true);
+        }}
+        className={`flex w-full select-none items-center gap-2.5 rounded-xl border p-2.5 text-left transition ${
+          isBase
+            ? "border-blue-400 bg-blue-50 ring-1 ring-blue-400"
+            : isApplied
+            ? "border-blue-200 bg-blue-50/60"
+            : "border-gray-200 hover:bg-gray-50"
+        }`}
+      >
+        <div
+          className={`shrink-0 rounded-lg p-2 ${
+            isExpense
+              ? "bg-red-50 text-red-600"
+              : "bg-green-50 text-green-600"
+          }`}
+        >
+          <RowIcon size={20} />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">
+            {row.title || categoryName || accountName}
+          </p>
+          <p className="truncate text-xs text-gray-500">
+            {subtitle ? `${subtitle} · ` : ""}
+            {formatDate(row.date)}
+          </p>
+        </div>
+
+        <p
+          className={`shrink-0 text-sm font-semibold ${
+            isExpense ? "text-red-600" : "text-green-600"
+          }`}
+        >
+          {isExpense ? "-" : "+"}
+          {rowSymbol}
+          {row.amount.toLocaleString()}
+        </p>
+      </button>
+    );
+  };
+
   const shiftMonth = (direction: "older" | "newer") => {
     if (currentMonthIndex < 0) return;
     const nextIndex =
@@ -307,6 +401,30 @@ const Reports = () => {
                 }`}
               >
                 {item}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-2 flex justify-end">
+          <div className="inline-flex rounded-full bg-gray-100 p-0.5 text-xs font-medium">
+            {(
+              [
+                { value: "detail", label: "Detail" },
+                { value: "daily", label: "Daily" },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setView(option.value)}
+                className={`rounded-full px-3 py-1 transition ${
+                  view === option.value
+                    ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-600"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                {option.label}
               </button>
             ))}
           </div>
@@ -494,89 +612,102 @@ const Reports = () => {
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  {currentGroup.map((row) => {
-                    const isExpense = row.type === "Expense";
-                    const categoryName = isExpense
-                      ? categoryNames.get(row.categoryId ?? -1) ?? "Uncategorized"
-                      : null;
-                    const accountName = row.account
-                      ? accountNames.get(row.account) ?? "Unknown account"
-                      : null;
-                    const RowIcon = isExpense
-                      ? AVAILABLE_ICONS[
-                          categoryIcons.get(row.categoryId ?? -1) ?? "Ellipsis"
-                        ] ?? AVAILABLE_ICONS.Ellipsis
-                      : INCOME_ICONS[accountIcons.get(row.account ?? "") ?? "Wallet"];
-                    const subtitle = [categoryName, accountName]
-                      .filter(Boolean)
-                      .join(" · ");
-                    const isBase = calcActive && row.key === calcBaseKey;
-                    const isApplied =
-                      calcActive && calcApplied[row.key] !== undefined;
+                {view === "detail" ? (
+                  <div className="space-y-2">
+                    {currentGroup.map((row) => renderRow(row))}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {dayGroups.map(([day, dayRows]) => {
+                      const dayIncome = dayRows
+                        .filter((row) => row.type === "Income")
+                        .reduce((sum, row) => sum + row.amount, 0);
+                      const dayExpense = dayRows
+                        .filter((row) => row.type === "Expense")
+                        .reduce((sum, row) => sum + row.amount, 0);
+                      const dayNet = dayIncome - dayExpense;
+                      const expanded = expandedDays.includes(day);
 
-                    return (
-                      <button
-                        key={row.key}
-                        type="button"
-                        onPointerDown={() => startLongPress(row)}
-                        onPointerUp={cancelLongPress}
-                        onPointerLeave={cancelLongPress}
-                        onPointerCancel={cancelLongPress}
-                        onContextMenu={(event) => event.preventDefault()}
-                        onClick={() => {
-                          if (longPressTriggered.current) {
-                            longPressTriggered.current = false;
-                            return;
-                          }
-                          if (calcActive) {
-                            handleCalcTap(row);
-                            return;
-                          }
-                          setEditingRow(row);
-                          setEditorOpen(true);
-                        }}
-                        className={`flex w-full select-none items-center gap-2.5 rounded-xl border p-2.5 text-left transition ${
-                          isBase
-                            ? "border-blue-400 bg-blue-50 ring-1 ring-blue-400"
-                            : isApplied
-                            ? "border-blue-200 bg-blue-50/60"
-                            : "border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
+                      return (
                         <div
-                          className={`shrink-0 rounded-lg p-2 ${
-                            isExpense
-                              ? "bg-red-50 text-red-600"
-                              : "bg-green-50 text-green-600"
+                          key={day}
+                          className={`overflow-hidden rounded-xl border transition ${
+                            expanded
+                              ? "border-blue-200 bg-blue-50/30"
+                              : "border-gray-200"
                           }`}
                         >
-                          <RowIcon size={20} />
-                        </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedDays((prev) =>
+                                prev.includes(day)
+                                  ? prev.filter((item) => item !== day)
+                                  : [...prev, day]
+                              )
+                            }
+                            aria-expanded={expanded}
+                            className="flex w-full items-center gap-2.5 p-2.5 text-left"
+                          >
+                            <div
+                              className={`shrink-0 rounded-lg p-2 ${
+                                expanded
+                                  ? "bg-blue-100 text-blue-600"
+                                  : "bg-gray-50 text-gray-500"
+                              }`}
+                            >
+                              <Calendar size={20} />
+                            </div>
 
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">
-                            {row.title || categoryName || accountName}
-                          </p>
-                          <p className="truncate text-xs text-gray-500">
-                            {subtitle ? `${subtitle} · ` : ""}
-                            {formatDate(row.date)}
-                          </p>
-                        </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium">
+                                {formatDate(day)}
+                              </p>
+                              <p className="truncate text-xs text-gray-500">
+                                {dayRows.length}{" "}
+                                {dayRows.length === 1 ? "entry" : "entries"}
+                                {dayIncome > 0
+                                  ? ` · In ${symbol}${dayIncome.toLocaleString()}`
+                                  : ""}
+                                {dayExpense > 0
+                                  ? ` · Out ${symbol}${dayExpense.toLocaleString()}`
+                                  : ""}
+                              </p>
+                            </div>
 
-                        <p
-                          className={`shrink-0 text-sm font-semibold ${
-                            isExpense ? "text-red-600" : "text-green-600"
-                          }`}
-                        >
-                          {isExpense ? "-" : "+"}
-                          {symbol}
-                          {row.amount.toLocaleString()}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
+                            <div className="shrink-0 text-right">
+                              <p
+                                className={`text-sm font-semibold ${
+                                  dayNet >= 0
+                                    ? "text-green-600"
+                                    : "text-red-600"
+                                }`}
+                              >
+                                {dayNet < 0 ? "-" : "+"}
+                                {symbol}
+                                {Math.abs(dayNet).toLocaleString()}
+                              </p>
+                              <p className="text-xs text-gray-400">net</p>
+                            </div>
+
+                            <ChevronDown
+                              size={18}
+                              className={`shrink-0 text-gray-400 transition ${
+                                expanded ? "rotate-180" : ""
+                              }`}
+                            />
+                          </button>
+
+                          {expanded && (
+                            <div className="space-y-2 border-t border-blue-100 bg-white p-2">
+                              {dayRows.map((row) => renderRow(row))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </>
             );
           })()}

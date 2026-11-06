@@ -4,10 +4,20 @@ import { CURRENCY, type CurrencyCode } from "@/currency";
 import { db, type Budget } from "@/db";
 import { AVAILABLE_ICONS } from "@/ExpenseIcons";
 import { useLiveQuery } from "dexie-react-hooks";
-import { AlertTriangle, Plus, Pencil, Trash2, X } from "lucide-react";
+import { AlertTriangle, Plus, Pencil, Trash2, X, ChevronDown, History } from "lucide-react";
 import { useMemo, useState } from "react";
 
 type PeriodKey = "1 week" | "15 days" | "1 month" | "custom";
+
+type BudgetRow = {
+  budget: Budget;
+  startStr: string;
+  endStr: string;
+  spent: number;
+  remaining: number;
+  pct: number;
+  exceeded: boolean;
+};
 
 const periods: { value: PeriodKey; label: string }[] = [
   { value: "1 week", label: "1 Week" },
@@ -22,6 +32,12 @@ const toYMD = (date: Date) =>
   `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 
 const todayYMD = () => toYMD(new Date());
+
+const formatMonthLabel = (value: string) =>
+  new Date(`${value}-01T00:00:00`).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
 
 const parseYMD = (value: string) => new Date(`${value}T00:00:00`);
 
@@ -71,6 +87,7 @@ const Budgets = () => {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [message, setMessage] = useState("");
+  const [showPrevious, setShowPrevious] = useState(false);
 
   const symbol = useMemo(() => {
     const counts = new Map<string, number>();
@@ -82,7 +99,7 @@ const Budgets = () => {
     return CURRENCY[top as CurrencyCode]?.symbol ?? "";
   }, [expenses]);
 
-  const rows = useMemo(() => {
+  const rows = useMemo<BudgetRow[]>(() => {
     if (!budgets) return [];
 
     const list = expenses ?? [];
@@ -130,7 +147,129 @@ const Budgets = () => {
   const budgetCategoryName = (id: number | null) =>
     id === null ? "All expenses" : (categoryNames.get(id) ?? "Uncategorized");
 
-  const exceededRows = rows.filter((row) => row.exceeded);
+  const currentMonthKey = todayYMD().slice(0, 7);
+  const currentRows = rows.filter(
+    (row) => row.startStr.slice(0, 7) >= currentMonthKey
+  );
+  const previousRows = rows.filter(
+    (row) => row.startStr.slice(0, 7) < currentMonthKey
+  );
+
+  const previousGroups = (() => {
+    const map = new Map<string, BudgetRow[]>();
+    previousRows.forEach((row) => {
+      const key = row.startStr.slice(0, 7);
+      const group = map.get(key);
+      if (group) group.push(row);
+      else map.set(key, [row]);
+    });
+    return [...map.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  })();
+
+  const exceededRows = currentRows.filter((row) => row.exceeded);
+
+  const renderBudgetCard = ({
+    budget,
+    spent,
+    remaining,
+    pct,
+    exceeded,
+  }: BudgetRow) => {
+    const CategoryIcon = iconFor(budget.categoryId);
+    const pctLabel = pct >= 1 ? `${Math.round(pct)}%` : `${pct.toFixed(1)}%`;
+    const barColor = exceeded
+      ? "#dc2626"
+      : pct >= 88
+        ? "#f59e0b"
+        : "#2563eb";
+
+    return (
+      <div
+        key={budget.id}
+        className="rounded-2xl border border-gray-200 p-4"
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className={`shrink-0 rounded-xl p-2 ${
+              exceeded
+                ? "bg-red-50 text-red-600"
+                : "bg-blue-50 text-blue-600"
+            }`}
+          >
+            <CategoryIcon size={20} />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium text-gray-900">
+              {budgetCategoryName(budget.categoryId)}
+            </p>
+            <p className="truncate text-xs text-gray-500">
+              {periodLabel(budget)}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => openEditForm(budget)}
+            aria-label="Edit budget"
+            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-blue-600"
+          >
+            <Pencil size={18} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (budget.id !== undefined) {
+                void handleDelete(budget.id);
+              }
+            }}
+            aria-label="Delete budget"
+            className="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600"
+          >
+            <Trash2 size={18} />
+          </button>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between text-sm">
+          <span className="font-semibold text-gray-900">
+            {symbol}
+            {Math.round(spent).toLocaleString()}
+            <span className="font-normal text-gray-400">
+              {" "}
+              / {symbol}
+              {budget.amount.toLocaleString()}
+            </span>
+          </span>
+          <span
+            className={`text-xs font-semibold ${
+              exceeded ? "text-red-600" : "text-gray-500"
+            }`}
+          >
+            {exceeded
+              ? `${symbol}${Math.round(
+                  Math.abs(remaining)
+                ).toLocaleString()} over`
+              : `${symbol}${Math.round(remaining).toLocaleString()} left`}
+          </span>
+        </div>
+
+        <div className="relative mt-2 h-2.5 overflow-hidden rounded-full bg-gray-100">
+          <div
+            className="h-full rounded-full transition-all"
+            style={{
+              width: `${Math.min(Math.max(pct, 2), 100)}%`,
+              backgroundColor: barColor,
+            }}
+          />
+        </div>
+
+        <p className="mt-1 text-right text-xs font-medium text-gray-400">
+          {pctLabel}
+        </p>
+      </div>
+    );
+  };
 
   const openAddForm = () => {
     setEditingId(null);
@@ -315,112 +454,74 @@ const Budgets = () => {
           )}
 
           <section className="mt-8">
-            <h2 className="mb-3 text-sm font-semibold text-gray-900">
-              Your budgets
+            <h2 className="mb-3 flex items-baseline justify-between gap-2">
+              <span className="text-sm font-semibold text-gray-900">
+                {formatMonthLabel(currentMonthKey)}
+              </span>
+              <span className="text-xs text-gray-400">This month</span>
             </h2>
 
-            <div className="space-y-3">
-              {rows.map(({ budget, spent, remaining, pct, exceeded }) => {
-                const CategoryIcon = iconFor(budget.categoryId);
-                const pctLabel =
-                  pct >= 1 ? `${Math.round(pct)}%` : `${pct.toFixed(1)}%`;
-                const barColor = exceeded
-                  ? "#dc2626"
-                  : pct >= 88
-                    ? "#f59e0b"
-                    : "#2563eb";
-
-                return (
-                  <div
-                    key={budget.id}
-                    className="rounded-2xl border border-gray-200 p-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`shrink-0 rounded-xl p-2 ${
-                          exceeded
-                            ? "bg-red-50 text-red-600"
-                            : "bg-blue-50 text-blue-600"
-                        }`}
-                      >
-                        <CategoryIcon size={20} />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-gray-900">
-                          {budgetCategoryName(budget.categoryId)}
-                        </p>
-                        <p className="truncate text-xs text-gray-500">
-                          {periodLabel(budget)}
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => openEditForm(budget)}
-                        aria-label="Edit budget"
-                        className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-blue-600"
-                      >
-                        <Pencil size={18} />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (budget.id !== undefined) {
-                            void handleDelete(budget.id);
-                          }
-                        }}
-                        aria-label="Delete budget"
-                        className="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between text-sm">
-                      <span className="font-semibold text-gray-900">
-                        {symbol}
-                        {Math.round(spent).toLocaleString()}
-                        <span className="font-normal text-gray-400">
-                          {" "}
-                          / {symbol}
-                          {budget.amount.toLocaleString()}
-                        </span>
-                      </span>
-                      <span
-                        className={`text-xs font-semibold ${
-                          exceeded ? "text-red-600" : "text-gray-500"
-                        }`}
-                      >
-                        {exceeded
-                          ? `${symbol}${Math.round(
-                              Math.abs(remaining)
-                            ).toLocaleString()} over`
-                          : `${symbol}${Math.round(
-                              remaining
-                            ).toLocaleString()} left`}
-                      </span>
-                    </div>
-
-                    <div className="relative mt-2 h-2.5 overflow-hidden rounded-full bg-gray-100">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${Math.min(Math.max(pct, 2), 100)}%`,
-                          backgroundColor: barColor,
-                        }}
-                      />
-                    </div>
-
-                    <p className="mt-1 text-right text-xs font-medium text-gray-400">
-                      {pctLabel}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
+            {currentRows.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-gray-200 p-6 text-center">
+                <p className="text-sm font-medium text-gray-900">
+                  No budgets for this month
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Tap + to add a budget.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {currentRows.map((row) => renderBudgetCard(row))}
+              </div>
+            )}
           </section>
+
+          {previousRows.length > 0 && (
+            <section className="mt-8">
+              <button
+                type="button"
+                onClick={() => setShowPrevious((value) => !value)}
+                aria-expanded={showPrevious}
+                className="flex w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 text-left transition hover:bg-gray-50"
+              >
+                <div className="shrink-0 rounded-xl bg-gray-100 p-2 text-gray-500">
+                  <History size={20} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-gray-900">
+                    Previous budgets
+                  </p>
+                  <p className="truncate text-xs text-gray-500">
+                    {previousRows.length}{" "}
+                    {previousRows.length === 1 ? "budget" : "budgets"} from
+                    earlier months
+                  </p>
+                </div>
+                <ChevronDown
+                  size={20}
+                  className={`shrink-0 text-gray-400 transition ${
+                    showPrevious ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {showPrevious && (
+                <div className="mt-4 space-y-6 border-l-2 border-gray-100 pl-4">
+                  {previousGroups.map(([month, monthRows]) => (
+                    <div key={month}>
+                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                        {formatMonthLabel(month)}
+                      </h3>
+                      <div className="space-y-3">
+                        {monthRows.map((row) => renderBudgetCard(row))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </>
       )}
 
