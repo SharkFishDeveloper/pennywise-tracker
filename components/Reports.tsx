@@ -405,38 +405,30 @@ const Reports = () => {
             ))}
           </div>
         </div>
-
-        <div className="mt-2 flex justify-end">
-          <div className="inline-flex rounded-full bg-gray-100 p-0.5 text-xs font-medium">
-            {(
-              [
-                { value: "detail", label: "Detail" },
-                { value: "daily", label: "Daily" },
-              ] as const
-            ).map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setView(option.value)}
-                className={`rounded-full px-3 py-1 transition ${
-                  view === option.value
-                    ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-600"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       <div className="mb-1 flex items-center justify-between gap-2">
-        {hasDateFilter ? (
-          <p className="truncate text-xs text-gray-500">{rangeLabel}</p>
-        ) : (
-          <span aria-hidden />
-        )}
+        <div className="inline-flex shrink-0 rounded-full bg-gray-100 p-0.5 text-xs font-medium">
+          {(
+            [
+              { value: "detail", label: "Detail" },
+              { value: "daily", label: "Daily" },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setView(option.value)}
+              className={`rounded-full px-3 py-1 transition ${
+                view === option.value
+                  ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <div className="relative flex shrink-0 items-center">
           {calendarOpen && (
             <button
@@ -521,6 +513,10 @@ const Reports = () => {
           )}
         </div>
       </div>
+
+      {hasDateFilter && (
+        <p className="mb-1 truncate text-xs text-gray-500">{rangeLabel}</p>
+      )}
 
       {forecast ? (
         <Forecast
