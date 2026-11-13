@@ -5,15 +5,14 @@ import { db, type Expense, type Income } from "@/db";
 import { AVAILABLE_ICONS } from "@/ExpenseIcons";
 import { INCOME_ICONS } from "@/IncomeIcons";
 import { useLiveQuery } from "dexie-react-hooks";
-import type { LucideIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import PieChart, { PIE_COLORS } from "@/components/charts/PieChart";
 import LineChart from "@/components/charts/LineChart";
 import BarChart from "@/components/charts/BarChart";
-import ExpectedActualChart from "@/components/charts/ExpectedActualChart";
 
 type Mode = "Expense" | "Income";
-type Range = "all" | "month" | "15days" | "week";
+type Range = "all" | "monthwise" | "month" | "15days" | "week";
 
 const modes: { value: Mode; label: string }[] = [
   { value: "Expense", label: "Expenses" },
@@ -22,6 +21,7 @@ const modes: { value: Mode; label: string }[] = [
 
 const ranges: { value: Range; label: string; days: number | null }[] = [
   { value: "all", label: "All", days: null },
+  { value: "monthwise", label: "Month wise", days: null },
   { value: "month", label: "1 Month", days: 30 },
   { value: "15days", label: "15 Days", days: 15 },
   { value: "week", label: "1 Week", days: 7 },
@@ -275,6 +275,7 @@ const TransactionTiles = ({
 const Charts = () => {
   const [mode, setMode] = useState<Mode>("Expense");
   const [range, setRange] = useState<Range>("all");
+  const [lineOffset, setLineOffset] = useState(0);
   const [group, setGroup] = useState<string>("all");
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<number | null>(null);
@@ -291,69 +292,177 @@ const Charts = () => {
 
   const rangeDays = ranges.find((item) => item.value === range)?.days ?? null;
   const allRows = mode === "Expense" ? (expenses ?? []) : (incomes ?? []);
-  const rows = rangeDays
-    ? today
-      ? allRows.filter((row) => withinDays(row.date, rangeDays, today))
-      : []
-    : allRows;
+  const rows = (() => {
+    if (range === "monthwise") {
+      if (!today) return [];
+      const start = toDateKey(new Date(today.getFullYear(), today.getMonth(), 1));
+      const end = toDateKey(
+        new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      );
+      return allRows.filter((row) => row.date >= start && row.date <= end);
+    }
 
-  const { slices, total, symbol, centerLabel, linePoints, lineColor } =
-    useMemo(() => {
-      const groupTotals = new Map<string, number>();
-      const currencyCount = new Map<string, number>();
-      const dailyTotals = new Map<string, number>();
+    if (rangeDays) {
+      return today
+        ? allRows.filter((row) => withinDays(row.date, rangeDays, today))
+        : [];
+    }
 
-      if (mode === "Expense") {
-        rows.forEach((row) => {
-          const category =
-            categories?.find((item) => item.id === row.categoryId)?.name ??
-            "Uncategorized";
-          groupTotals.set(category, (groupTotals.get(category) ?? 0) + row.amount);
-        });
-      } else {
-        rows.forEach((row) => {
-          const account = row.account
-            ? (accounts?.find((item) => String(item.id) === row.account)?.name ??
-              "Unknown account")
-            : "Unknown account";
-          groupTotals.set(account, (groupTotals.get(account) ?? 0) + row.amount);
-        });
-      }
+    return allRows;
+  })();
 
+  const {
+    slices,
+    total,
+    symbol,
+    centerLabel,
+    linePoints,
+    lineColor,
+    lineWindowLabel,
+    lineCanGoBack,
+  } = useMemo(() => {
+    const groupTotals = new Map<string, number>();
+    const currencyCount = new Map<string, number>();
+
+    if (mode === "Expense") {
       rows.forEach((row) => {
-        currencyCount.set(row.currency, (currencyCount.get(row.currency) ?? 0) + 1);
-        dailyTotals.set(row.date, (dailyTotals.get(row.date) ?? 0) + row.amount);
+        const category =
+          categories?.find((item) => item.id === row.categoryId)?.name ??
+          "Uncategorized";
+        groupTotals.set(category, (groupTotals.get(category) ?? 0) + row.amount);
       });
+    } else {
+      rows.forEach((row) => {
+        const account = row.account
+          ? (accounts?.find((item) => String(item.id) === row.account)?.name ??
+            "Unknown account")
+          : "Unknown account";
+        groupTotals.set(account, (groupTotals.get(account) ?? 0) + row.amount);
+      });
+    }
 
-      const currency =
-        [...currencyCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
-        "INR";
+    rows.forEach((row) => {
+      currencyCount.set(row.currency, (currencyCount.get(row.currency) ?? 0) + 1);
+    });
 
-      const sorted = [...groupTotals.entries()].sort((a, b) => b[1] - a[1]);
+    const currency =
+      [...currencyCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
+      "INR";
 
-      const dateKeys = buildDateSeries(rows, rangeDays, today);
+    const sorted = [...groupTotals.entries()].sort((a, b) => b[1] - a[1]);
 
-      return {
-        slices: sorted.map(([name, value], index) => ({
-          name,
-          value,
-          color: PIE_COLORS[index % PIE_COLORS.length],
-        })),
-        total: sorted.reduce((sum, [, value]) => sum + value, 0),
-        symbol: CURRENCY[currency as keyof typeof CURRENCY]?.symbol ?? "",
-        centerLabel: mode === "Expense" ? "Total spent" : "Total received",
-        linePoints: dateKeys.map((date) => ({
+    const totalsByDay = new Map<string, number>();
+
+    allRows.forEach((row) => {
+      totalsByDay.set(row.date, (totalsByDay.get(row.date) ?? 0) + row.amount);
+    });
+
+    const earliestDate = allRows.reduce<string | null>(
+      (min, row) => (min === null || row.date < min ? row.date : min),
+      null
+    );
+
+    let points: { label: string; value: number; date: string }[] = [];
+    let windowLabel = "";
+    let canGoBack = false;
+
+    if (today) {
+      if (range === "monthwise") {
+        const monthStart = new Date(
+          today.getFullYear(),
+          today.getMonth() - lineOffset,
+          1
+        );
+        const monthEnd = new Date(
+          monthStart.getFullYear(),
+          monthStart.getMonth() + 1,
+          0
+        );
+
+        const dates = buildDateSeries(allRows, monthEnd.getDate(), monthEnd);
+        points = dates.map((date) => ({
           label: shortDate(date),
-          value: dailyTotals.get(date) ?? 0,
+          value: totalsByDay.get(date) ?? 0,
           date,
-        })),
-        lineColor: mode === "Expense" ? "#ef4444" : "#16a34a",
-      };
-    }, [rows, categories, accounts, mode, rangeDays, today]);
+        }));
+
+        windowLabel = monthStart.toLocaleDateString(undefined, {
+          month: "long",
+          year: "numeric",
+        });
+        canGoBack =
+          earliestDate !== null && earliestDate < toDateKey(monthStart);
+      } else if (rangeDays === null) {
+        const dates = [...new Set(allRows.map((row) => row.date))].sort();
+        points = dates.map((date) => ({
+          label: shortDate(date),
+          value: totalsByDay.get(date) ?? 0,
+          date,
+        }));
+        windowLabel = "All dates";
+      } else {
+        const end = startOfDay(today);
+        end.setDate(end.getDate() - rangeDays * lineOffset);
+
+        const dates = buildDateSeries(allRows, rangeDays, end);
+        points = dates.map((date) => ({
+          label: shortDate(date),
+          value: totalsByDay.get(date) ?? 0,
+          date,
+        }));
+
+        const first = dates[0];
+        const last = dates[dates.length - 1];
+        if (first && last) {
+          const startLabel = new Date(`${first}T00:00:00`).toLocaleDateString(
+            undefined,
+            { day: "numeric", month: "short" }
+          );
+          const endLabel = new Date(`${last}T00:00:00`).toLocaleDateString(
+            undefined,
+            { day: "numeric", month: "short", year: "numeric" }
+          );
+          windowLabel = `${startLabel} – ${endLabel}`;
+          canGoBack = earliestDate !== null && earliestDate < first;
+        }
+      }
+    }
+
+    return {
+      slices: sorted.map(([name, value], index) => ({
+        name,
+        value,
+        color: PIE_COLORS[index % PIE_COLORS.length],
+      })),
+      total: sorted.reduce((sum, [, value]) => sum + value, 0),
+      symbol: CURRENCY[currency as keyof typeof CURRENCY]?.symbol ?? "",
+      centerLabel: mode === "Expense" ? "Total spent" : "Total received",
+      linePoints: points,
+      lineColor: mode === "Expense" ? "#ef4444" : "#16a34a",
+      lineWindowLabel: windowLabel,
+      lineCanGoBack: canGoBack,
+    };
+  }, [
+    rows,
+    allRows,
+    categories,
+    accounts,
+    mode,
+    range,
+    rangeDays,
+    today,
+    lineOffset,
+  ]);
 
   const groupNames = slices.map((slice) => slice.name);
   const activeGroup =
     group !== "all" && groupNames.includes(group) ? group : "all";
+
+  const lineAverage =
+    linePoints.length > 0
+      ? linePoints.reduce((sum, point) => sum + point.value, 0) /
+        linePoints.length
+      : 0;
 
   const barPoints = useMemo(() => {
     if (activeGroup === "all") return [];
@@ -477,22 +586,33 @@ const Charts = () => {
     setGroup("all");
     setSelected(null);
     setSelectedPoint(null);
+    setLineOffset(0);
   };
 
   const changeRange = (value: Range) => {
     setRange(value);
+    setSelectedPoint(null);
+    setLineOffset(0);
+  };
+
+  const shiftLine = (direction: -1 | 1) => {
+    setLineOffset((current) =>
+      direction === 1 ? current + 1 : Math.max(0, current - 1)
+    );
     setSelectedPoint(null);
   };
 
   const activePoint =
     selectedPoint !== null ? linePoints[selectedPoint] ?? null : null;
 
+  const activePointLabel = activePoint ? fullDate(activePoint.date) : "";
+
   const dayBreakdown = (() => {
     if (!activePoint) return [];
 
     const totals = new Map<string, number>();
 
-    rows
+    allRows
       .filter((row) => row.date === activePoint.date)
       .forEach((row) => {
         const name =
@@ -548,13 +668,13 @@ const Charts = () => {
         </label>
       </div>
 
-      <div className="mt-5 grid grid-cols-4 gap-2 rounded-2xl bg-gray-100 p-1">
+      <div className="mt-5 grid grid-cols-5 gap-1.5 rounded-2xl bg-gray-100 p-1">
         {ranges.map((item) => (
           <button
             key={item.value}
             type="button"
             onClick={() => changeRange(item.value)}
-            className={`rounded-xl p-2 text-xs font-medium transition sm:text-sm ${
+            className={`rounded-xl px-1 py-2 text-[11px] font-medium leading-tight transition sm:text-sm ${
               range === item.value
                 ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-600"
                 : "text-gray-600 hover:text-gray-900"
@@ -727,18 +847,59 @@ const Charts = () => {
                   : "Income by date"
               }
             >
+              <div className="mb-3 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => shiftLine(1)}
+                  disabled={!lineCanGoBack}
+                  aria-label="Previous period"
+                  className="rounded-lg border border-gray-200 p-1.5 text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="min-w-0 flex-1 text-center text-xs font-medium text-gray-600">
+                  {lineWindowLabel}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => shiftLine(-1)}
+                  disabled={lineOffset === 0}
+                  aria-label="Next period"
+                  className="rounded-lg border border-gray-200 p-1.5 text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
               <LineChart
                 data={linePoints}
                 color={lineColor}
                 selected={selectedPoint}
                 onSelect={setSelectedPoint}
+                average={lineAverage}
               />
+
+              <div className="mt-3 flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
+                <span className="text-xs font-medium text-gray-600">
+                  Average {mode === "Expense" ? "spent" : "received"} per day
+                </span>
+                <span
+                  className={`text-sm font-semibold ${
+                    mode === "Expense" ? "text-red-600" : "text-green-600"
+                  }`}
+                >
+                  {symbol}
+                  {lineAverage.toLocaleString(undefined, {
+                    maximumFractionDigits: 0,
+                  })}
+                </span>
+              </div>
 
               {activePoint && (
                 <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="min-w-0 truncate text-sm font-semibold text-gray-900">
-                      {fullDate(activePoint.date)}
+                      {activePointLabel}
                     </p>
                     <button
                       type="button"
@@ -801,29 +962,6 @@ const Charts = () => {
             </Card>
           )}
             </>
-          )}
-
-          {mode === "Expense" && hasComparisonData && (
-            <Card
-              title={`${
-                detailGroup ?? "All categories"
-              } expected vs actual`}
-            >
-              <p className="mb-3 text-xs text-gray-500">
-                Last 6 {comparisonUnit} · expected is the average of earlier{" "}
-                {comparisonUnit} · * latest {comparisonUnitSingular} includes
-                today
-              </p>
-              <ExpectedActualChart
-                data={comparisonPoints}
-                symbol={symbol}
-                actualColor={barColor}
-                expectedColor="#6b7280"
-                ariaLabel={`Expected vs actual spending for ${
-                  detailGroup ?? "all categories"
-                }`}
-              />
-            </Card>
           )}
         </div>
       )}

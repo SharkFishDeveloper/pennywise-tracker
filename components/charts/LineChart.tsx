@@ -29,11 +29,13 @@ const LineChart = ({
   color,
   selected,
   onSelect,
+  average,
 }: {
   data: Point[];
   color: string;
   selected: number | null;
   onSelect: (index: number | null) => void;
+  average?: number;
 }) => {
   const maxVal = Math.max(1, ...data.map((d) => d.value));
 
@@ -43,6 +45,8 @@ const LineChart = ({
       : PAD_L + (INNER_W * i) / (data.length - 1);
 
   const y = (v: number) => PAD_T + INNER_H - (v / maxVal) * INNER_H;
+
+  const averageY = average && average > 0 ? y(average) : null;
 
   const ticks = [0, 0.25, 0.5, 0.75, 1];
 
@@ -84,6 +88,29 @@ const LineChart = ({
 
       {areaPoints && (
         <polygon points={areaPoints} fill={color} opacity="0.09" />
+      )}
+
+      {averageY !== null && (
+        <g>
+          <line
+            x1={PAD_L}
+            x2={W - PAD_R}
+            y1={averageY}
+            y2={averageY}
+            stroke="#6b7280"
+            strokeWidth="1.5"
+            strokeDasharray="5 4"
+          />
+          <text
+            x={W - PAD_R}
+            y={averageY - 5}
+            textAnchor="end"
+            fontSize="9.5"
+            fill="#6b7280"
+          >
+            avg {formatAxis(average ?? 0)}
+          </text>
+        </g>
       )}
 
       <polyline

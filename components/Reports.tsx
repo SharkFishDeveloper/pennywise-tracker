@@ -407,7 +407,7 @@ const Reports = () => {
         </div>
       </div>
 
-      <div className="mb-1 flex items-center justify-between gap-2">
+      <div className="mb-1 flex items-center justify-between gap-2 mt-3">
         <div className="inline-flex shrink-0 rounded-full bg-gray-100 p-0.5 text-xs font-medium">
           {(
             [
