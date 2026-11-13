@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronDown,
   ArrowLeft,
+  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import Forecast from "@/components/Forecast";
@@ -623,6 +624,22 @@ const Reports = () => {
                         .reduce((sum, row) => sum + row.amount, 0);
                       const dayNet = dayIncome - dayExpense;
                       const expanded = expandedDays.includes(day);
+                      const dayIcons: {
+                        key: string;
+                        Icon: LucideIcon;
+                        isExpense: boolean;
+                      }[] = dayRows.map((row) => {
+                        const isExpense = row.type === "Expense";
+                        const Icon = isExpense
+                          ? AVAILABLE_ICONS[
+                              categoryIcons.get(row.categoryId ?? -1) ??
+                                "Ellipsis"
+                            ] ?? AVAILABLE_ICONS.Ellipsis
+                          : INCOME_ICONS[
+                              accountIcons.get(row.account ?? "") ?? "Wallet"
+                            ] ?? INCOME_ICONS.Wallet;
+                        return { key: row.key, Icon, isExpense };
+                      });
 
                       return (
                         <div
@@ -659,7 +676,28 @@ const Reports = () => {
                               <p className="truncate text-sm font-medium">
                                 {formatDate(day)}
                               </p>
-                              <p className="truncate text-xs text-gray-500">
+                              <div className="mt-1 flex -space-x-1.5">
+                                {dayIcons.slice(0, 4).map(
+                                  ({ key, Icon, isExpense }) => (
+                                    <span
+                                      key={key}
+                                      className={`flex h-5 w-5 items-center justify-center rounded-full border-2 border-white ${
+                                        isExpense
+                                          ? "bg-red-50 text-red-600"
+                                          : "bg-green-50 text-green-600"
+                                      }`}
+                                    >
+                                      <Icon size={11} strokeWidth={2.2} />
+                                    </span>
+                                  )
+                                )}
+                                {dayIcons.length > 4 && (
+                                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-gray-100 px-1 text-[9px] font-semibold text-gray-600">
+                                    +{dayIcons.length - 4}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 truncate text-xs text-gray-500">
                                 {dayRows.length}{" "}
                                 {dayRows.length === 1 ? "entry" : "entries"}
                                 {dayIncome > 0
