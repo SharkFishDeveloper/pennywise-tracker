@@ -646,7 +646,7 @@ const Reports = () => {
                           key={day}
                           className={`overflow-hidden rounded-xl border transition ${
                             expanded
-                              ? "border-blue-200 bg-blue-50/30"
+                              ? "translate-x-1.5 border-blue-200 bg-blue-50/30"
                               : "border-gray-200"
                           }`}
                         >
@@ -660,23 +660,23 @@ const Reports = () => {
                               )
                             }
                             aria-expanded={expanded}
-                            className="flex w-full items-center gap-2.5 p-2.5 text-left"
+                            className="flex w-full items-center gap-2 p-2 text-left"
                           >
                             <div
-                              className={`shrink-0 rounded-lg p-2 ${
+                              className={`shrink-0 rounded-lg p-1.5 ${
                                 expanded
                                   ? "bg-blue-100 text-blue-600"
                                   : "bg-gray-50 text-gray-500"
                               }`}
                             >
-                              <Calendar size={20} />
+                              <Calendar size={18} />
                             </div>
 
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-medium">
                                 {formatDate(day)}
                               </p>
-                              <div className="mt-1 flex -space-x-1.5">
+                              <div className="mt-0.5 flex -space-x-1.5">
                                 {dayIcons.slice(0, 4).map(
                                   ({ key, Icon, isExpense }) => (
                                     <span
@@ -697,7 +697,7 @@ const Reports = () => {
                                   </span>
                                 )}
                               </div>
-                              <p className="mt-1 truncate text-xs text-gray-500">
+                              <p className="mt-0.5 truncate text-xs text-gray-500">
                                 {dayRows.length}{" "}
                                 {dayRows.length === 1 ? "entry" : "entries"}
                                 {dayIncome > 0

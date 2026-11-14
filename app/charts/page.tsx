@@ -21,18 +21,11 @@ const modes: { value: Mode; label: string }[] = [
 
 const ranges: { value: Range; label: string; days: number | null }[] = [
   { value: "all", label: "All", days: null },
-  { value: "monthwise", label: "Month wise", days: null },
+  { value: "monthwise", label: "Monthly", days: null },
   { value: "month", label: "1 Month", days: 30 },
   { value: "15days", label: "15 Days", days: 15 },
   { value: "week", label: "1 Week", days: 7 },
 ];
-
-const withinDays = (date: string, days: number, reference: Date) => {
-  const cutoff = new Date(reference);
-  cutoff.setHours(0, 0, 0, 0);
-  cutoff.setDate(cutoff.getDate() - (days - 1));
-  return new Date(`${date}T00:00:00`).getTime() >= cutoff.getTime();
-};
 
 const Card = ({
   title,
@@ -293,19 +286,34 @@ const Charts = () => {
   const rangeDays = ranges.find((item) => item.value === range)?.days ?? null;
   const allRows = mode === "Expense" ? (expenses ?? []) : (incomes ?? []);
   const rows = (() => {
+    if (range === "all") return allRows;
+    if (!today) return [];
+
     if (range === "monthwise") {
-      if (!today) return [];
-      const start = toDateKey(new Date(today.getFullYear(), today.getMonth(), 1));
-      const end = toDateKey(
-        new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      const monthStart = new Date(
+        today.getFullYear(),
+        today.getMonth() - lineOffset,
+        1
       );
+      const monthEnd = new Date(
+        monthStart.getFullYear(),
+        monthStart.getMonth() + 1,
+        0
+      );
+      const start = toDateKey(monthStart);
+      const end = toDateKey(monthEnd);
       return allRows.filter((row) => row.date >= start && row.date <= end);
     }
 
     if (rangeDays) {
-      return today
-        ? allRows.filter((row) => withinDays(row.date, rangeDays, today))
-        : [];
+      const end = startOfDay(today);
+      end.setDate(end.getDate() - rangeDays * lineOffset);
+      const start = addDays(end, -(rangeDays - 1));
+      const startKey = toDateKey(start);
+      const endKey = toDateKey(end);
+      return allRows.filter(
+        (row) => row.date >= startKey && row.date <= endKey
+      );
     }
 
     return allRows;
@@ -484,14 +492,19 @@ const Charts = () => {
       dailyTotals.set(row.date, (dailyTotals.get(row.date) ?? 0) + row.amount);
     });
 
-    const dateKeys = buildDateSeries(rows, rangeDays, today);
+    const dateKeys = (() => {
+      if (!rangeDays || !today) return buildDateSeries(rows, rangeDays, today);
+      const end = startOfDay(today);
+      end.setDate(end.getDate() - rangeDays * lineOffset);
+      return buildDateSeries(rows, rangeDays, end);
+    })();
 
     return dateKeys.map((date) => ({
       label: shortDate(date),
       value: dailyTotals.get(date) ?? 0,
       date,
     }));
-  }, [rows, categories, accounts, mode, activeGroup, rangeDays, today]);
+  }, [rows, categories, accounts, mode, activeGroup, rangeDays, today, lineOffset]);
 
   const barTotal = barPoints.reduce((sum, point) => sum + point.value, 0);
 
@@ -638,8 +651,6 @@ const Charts = () => {
       .sort((a, b) => b.value - a.value);
   })();
 
-  const groupTitle = mode === "Expense" ? "category" : "account";
-
   return (
     <div className="relative mx-auto min-h-[70vh] w-full max-w-3xl px-4 pb-32 pt-6 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -776,69 +787,6 @@ const Charts = () => {
 
           {activeGroup === "all" && (
             <>
-              <Card title={`Totals by ${groupTitle}`}>
-            <ul className="space-y-4">
-              {slices.map((slice, index) => {
-                const pct = (slice.value / total) * 100;
-                const pctLabel =
-                  pct >= 1 ? `${Math.round(pct)}%` : `${pct.toFixed(1)}%`;
-                const filled = pct >= 88;
-                const SliceIcon = iconMap[slice.name];
-
-                return (
-                  <li key={slice.name}>
-                    <div className="flex items-center gap-3">
-                      <span className="w-5 shrink-0 text-center text-xs font-medium text-gray-400">
-                        {index + 1}
-                      </span>
-                      <span
-                        className="h-3.5 w-3.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: slice.color }}
-                      />
-                      {SliceIcon && (
-                        <SliceIcon size={16} className="shrink-0 text-gray-500" />
-                      )}
-                      <span className="min-w-0 flex-1 truncate text-sm text-gray-800">
-                        {slice.name}
-                      </span>
-                      <span className="shrink-0 text-sm font-semibold text-gray-900">
-                        {symbol}
-                        {slice.value.toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="relative mt-1.5 ml-8 h-6 overflow-hidden rounded-lg bg-gray-100">
-                      <div
-                        className="h-full rounded-lg transition-all"
-                        style={{
-                          width: `${Math.max(pct, 1.5)}%`,
-                          backgroundColor: slice.color,
-                        }}
-                      />
-                      <span
-                        className={`absolute inset-y-0 right-3 flex items-center text-xs font-semibold ${
-                          filled ? "text-white" : "text-gray-600"
-                        }`}
-                      >
-                        {pctLabel}
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-
-            <div className="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
-              <span className="text-sm font-semibold text-gray-900">
-                Total {mode === "Expense" ? "spent" : "received"}
-              </span>
-              <span className="text-base font-bold text-gray-900">
-                {symbol}
-                {total.toLocaleString()}
-              </span>
-            </div>
-          </Card>
-
           {linePoints.length > 0 && (
             <Card
               title={

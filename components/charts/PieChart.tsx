@@ -191,11 +191,12 @@ const PieChart = ({
           </div>
         )}
 
-        <ul className="space-y-2.5">
+        <ul className="space-y-3">
           {arcs.map((arc) => {
             const isActive = selected === arc.name;
             const isDimmed = selected !== null && !isActive;
             const Icon = icons?.[arc.name];
+            const pct = arc.frac * 100;
 
             return (
               <li key={arc.name}>
@@ -212,10 +213,28 @@ const PieChart = ({
                   />
                   {Icon && <Icon size={16} className="shrink-0 text-gray-500" />}
                   <span className="min-w-0 flex-1 truncate">{arc.name}</span>
-                  <span className="shrink-0 text-xs text-gray-500">
-                    {pctOf(arc.value)}
+                  <span className="shrink-0 text-xs font-semibold text-gray-900">
+                    {symbol}
+                    {arc.value.toLocaleString()}
                   </span>
                 </button>
+
+                <div className="relative mt-1.5 ml-6 h-4 overflow-hidden rounded-md bg-gray-100">
+                  <div
+                    className="h-full rounded-md transition-all"
+                    style={{
+                      width: `${Math.max(pct, 1.5)}%`,
+                      backgroundColor: arc.color,
+                    }}
+                  />
+                  <span
+                    className={`absolute inset-y-0 right-2 flex items-center text-[10px] font-semibold ${
+                      pct >= 88 ? "text-white" : "text-gray-600"
+                    }`}
+                  >
+                    {pctOf(arc.value)}
+                  </span>
+                </div>
               </li>
             );
           })}
