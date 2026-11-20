@@ -1,11 +1,11 @@
 "use client";
 
 import { CURRENCY, type CurrencyCode } from "@/currency";
-import { db } from "@/db";
+import { db, type Accounts, type Category, type Expense } from "@/db";
 import { INCOME_ICONS } from "@/IncomeIcons";
 import { AVAILABLE_ICONS } from "@/ExpenseIcons";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Calculator, ChevronDown, Trash2 } from "lucide-react";
 
 export type EditableTransaction = {
@@ -110,6 +110,124 @@ const CALC_KEYS: {
   { label: "=", key: "=", className: "bg-blue-600 text-white" },
 ];
 
+const EMOJI_RE = new RegExp(
+  "[\\p{Extended_Pictographic}\\p{Regional_Indicator}\\uFE0F\\u200D\\u{1F3FB}-\\u{1F3FF}\\u20E3]",
+  "gu"
+);
+const NON_TITLE_RE = new RegExp("[^\\p{L}\\p{N}\\s, &]", "gu");
+const TITLE_SEPARATOR_RE = /,|&|\band\b/gi;
+
+type TitleSuggestion = {
+  categoryId: number | null;
+  accountId: string | null;
+};
+
+const normalizeTitleValue = (value: string) =>
+  value
+    .normalize("NFKC")
+    .replace(EMOJI_RE, " ")
+    .replace(/\uFFFD+/g, " ")
+    .replace(NON_TITLE_RE, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+const splitTitleItems = (value: string) =>
+  normalizeTitleValue(value)
+    .split(TITLE_SEPARATOR_RE)
+    .map((item) => item.replace(/[, &]+/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+const phraseWithin = (text: string, phrase: string) =>
+  text === phrase ||
+  text.startsWith(`${phrase} `) ||
+  text.endsWith(` ${phrase}`) ||
+  text.includes(` ${phrase} `);
+
+const titlePartsMatch = (first: string, second: string) =>
+  phraseWithin(first, second) || phraseWithin(second, first);
+
+function incrementCount<T>(map: Map<T, number>, key: T) {
+  map.set(key, (map.get(key) ?? 0) + 1);
+}
+
+function getTopKey<T>(scores: Map<T, number>, preferred: T | null): T | null {
+  let topCount = -1;
+  const topKeys: T[] = [];
+
+  for (const [key, count] of scores) {
+    if (count > topCount) {
+      topCount = count;
+      topKeys.length = 0;
+      topKeys.push(key);
+    } else if (count === topCount) {
+      topKeys.push(key);
+    }
+  }
+
+  if (topCount < 0) return null;
+  if (preferred !== null && topKeys.includes(preferred)) return preferred;
+  return topKeys[0] ?? null;
+}
+
+function getTitleSuggestion(
+  rawTitle: string,
+  expenses: Expense[] | undefined,
+  categories: Category[] | undefined,
+  accounts: Accounts[] | undefined,
+  preferredCategoryId: number | null,
+  preferredAccountId: string | null
+): TitleSuggestion {
+  const tokens = Array.from(new Set(splitTitleItems(rawTitle)));
+
+  if (
+    tokens.length === 0 ||
+    !expenses ||
+    !categories ||
+    !accounts ||
+    expenses.length === 0
+  ) {
+    return { categoryId: null, accountId: null };
+  }
+
+  const validCategoryIds = new Set<number>(
+    categories
+      .map((item) => item.id)
+      .filter((id): id is number => id !== undefined)
+  );
+  const validAccountIds = new Set<string>(
+    accounts
+      .map((item) => (item.id === undefined ? null : String(item.id)))
+      .filter((id): id is string => id !== null)
+  );
+
+  const normalizedExpenses = expenses
+    .map((item) => ({ expense: item, parts: splitTitleItems(item.title ?? "") }))
+    .filter((item) => item.parts.length > 0);
+
+  const categoryScores = new Map<number, number>();
+  const accountScores = new Map<string, number>();
+
+  tokens.forEach((token) => {
+    normalizedExpenses.forEach(({ expense, parts }) => {
+      if (!parts.some((part) => titlePartsMatch(part, token))) return;
+
+      if (validCategoryIds.has(expense.categoryId)) {
+        incrementCount(categoryScores, expense.categoryId);
+      }
+
+      if (expense.account && validAccountIds.has(expense.account)) {
+        incrementCount(accountScores, expense.account);
+      }
+    });
+  });
+
+  return {
+    categoryId: getTopKey(categoryScores, preferredCategoryId),
+    accountId: getTopKey(accountScores, preferredAccountId),
+  };
+}
+
 const Transaction = ({ transaction, onSaved }: TransactionProps) => {
   const [transacType, setTransacType] = useState<"Income" | "Expense">(
     transaction?.type ?? "Expense"
@@ -134,6 +252,9 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
   );
   const [showCalc, setShowCalc] = useState(false);
   const [calcExpr, setCalcExpr] = useState("");
+  const titleSuggestionRef = useRef(title);
+  const accountManuallySetRef = useRef(false);
+  const categoryManuallySetRef = useRef(false);
 
   const isEditing = Boolean(transaction);
 
@@ -141,6 +262,44 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
   const categories = useLiveQuery(() => db.categories.toArray(), []);
   const expenses = useLiveQuery(() => db.expenses.toArray(), []);
   const incomes = useLiveQuery(() => db.incomes.toArray(), []);
+
+  useEffect(() => {
+    if (titleSuggestionRef.current === title) return;
+    if (transacType !== "Expense") return;
+
+    if (accountManuallySetRef.current && categoryManuallySetRef.current) {
+      titleSuggestionRef.current = title;
+      return;
+    }
+
+    if (!expenses || !categories || !accounts) return;
+
+    titleSuggestionRef.current = title;
+
+    const suggestion = getTitleSuggestion(
+      title,
+      expenses,
+      categories,
+      accounts,
+      categoryId,
+      accountId === null ? null : String(accountId)
+    );
+
+    if (!accountManuallySetRef.current && suggestion.accountId !== null) {
+      const nextAccountId = Number(suggestion.accountId);
+      if (Number.isFinite(nextAccountId) && nextAccountId !== accountId) {
+        setAccountId(nextAccountId);
+      }
+    }
+
+    if (
+      !categoryManuallySetRef.current &&
+      suggestion.categoryId !== null &&
+      suggestion.categoryId !== categoryId
+    ) {
+      setCategoryId(suggestion.categoryId);
+    }
+  }, [title, transacType, expenses, categories, accounts, accountId, categoryId]);
 
   const selectedAccount = accounts?.find((item) => item.id === accountId);
   const selectedCategory = categories?.find((item) => item.id === categoryId);
@@ -329,6 +488,9 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
       setAccountId(null);
       setCategoryId(null);
       setDate(getToday());
+      titleSuggestionRef.current = "";
+      accountManuallySetRef.current = false;
+      categoryManuallySetRef.current = false;
       setShowCalc(false);
       setCalcExpr("");
       setMessage(`${transacType} saved successfully.`);
@@ -387,11 +549,14 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
             key={item}
             type="button"
             disabled={isEditing}
-            onClick={() => {
-              setTransacType(item);
-              setTitle("");
-              setMessage("");
-            }}
+              onClick={() => {
+                setTransacType(item);
+                setTitle("");
+                setMessage("");
+                titleSuggestionRef.current = "";
+                accountManuallySetRef.current = false;
+                categoryManuallySetRef.current = false;
+              }}
             className={`rounded-xl p-3 font-medium transition disabled:cursor-not-allowed ${
               transacType === item
                 ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-600"
@@ -558,6 +723,7 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
                       type="button"
                       onClick={() => {
                         setAccountId(item.id!);
+                        accountManuallySetRef.current = true;
                         setOpenPicker(null);
                       }}
                       className={`flex w-full min-w-0 items-center gap-3 rounded-lg p-2.5 text-left ${
@@ -629,10 +795,11 @@ const Transaction = ({ transaction, onSaved }: TransactionProps) => {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => {
-                      setCategoryId(item.id!);
-                      setOpenPicker(null);
-                    }}
+                      onClick={() => {
+                        setCategoryId(item.id!);
+                        categoryManuallySetRef.current = true;
+                        setOpenPicker(null);
+                      }}
                     className={`flex w-full min-w-0 items-center gap-3 rounded-lg p-2.5 text-left ${
                       selected
                         ? "bg-blue-50 text-blue-700"
