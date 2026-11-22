@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import NavMenu from "./NavMenu";
 
 const Navbar = () => {
   return (
@@ -18,6 +19,7 @@ const Navbar = () => {
             PennyWise
           </span>
         </Link>
+        <NavMenu />
       </div>
     </header>
   );

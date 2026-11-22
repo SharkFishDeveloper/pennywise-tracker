@@ -4,6 +4,8 @@ import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import RecurrenceSync from "@/components/RecurrenceSync";
+import CloudSync from "@/components/CloudSync";
+import AuthGate from "@/components/AuthGate";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,7 +41,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-dvh flex-col bg-white text-gray-900">
         <Navbar />
         <RecurrenceSync />
-        <main className="mx-auto w-full max-w-5xl flex-1">{children}</main>
+        <CloudSync />
+        <main className="mx-auto w-full max-w-5xl flex-1">
+          <AuthGate>{children}</AuthGate>
+        </main>
         <Footer />
       </body>
     </html>

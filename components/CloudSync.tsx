@@ -1,0 +1,251 @@
+"use client";
+
+import { useEffect } from "react";
+import { fetchAuthState } from "@/lib/auth-client";
+import {
+  AUTH_EVENT,
+  SYNC_FORCE_EVENT,
+  SYNC_STATUS_EVENT,
+  applySnapshot,
+  clearLocalData,
+  hashSnapshot,
+  hasData,
+  isSnapshot,
+  readSnapshot,
+  registerChangeHooks,
+} from "@/lib/cloud-sync";
+
+const PUSH_DELAY = 10_000;
+const MAX_WAIT = 60_000;
+const PULL_COOLDOWN = 60_000;
+const ACCOUNT_KEY = "pennywise.cloud.account";
+
+type Status = "idle" | "pending" | "saving" | "saved" | "error";
+
+const state = {
+  email: null as string | null,
+  dirty: false,
+  firstDirtyAt: 0,
+  timer: null as ReturnType<typeof setTimeout> | null,
+  maxTimer: null as ReturnType<typeof setTimeout> | null,
+  lastPullAt: 0,
+  lastHash: null as string | null,
+  pushing: false,
+};
+
+function setStatus(status: Status, detail?: string) {
+  window.dispatchEvent(
+    new CustomEvent(SYNC_STATUS_EVENT, { detail: { status, detail } }),
+  );
+}
+
+function timeKey(email: string) {
+  return `pennywise.cloud.time.${email}`;
+}
+
+function readTime(email: string) {
+  const value = Number(window.localStorage.getItem(timeKey(email)));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function writeTime(email: string, value: number) {
+  window.localStorage.setItem(timeKey(email), String(value));
+}
+
+function readHash(email: string) {
+  return window.localStorage.getItem(`pennywise.cloud.hash.${email}`);
+}
+
+function writeHash(email: string, value: string) {
+  window.localStorage.setItem(`pennywise.cloud.hash.${email}`, value);
+}
+
+function clearTimers() {
+  if (state.timer) clearTimeout(state.timer);
+  if (state.maxTimer) clearTimeout(state.maxTimer);
+  state.timer = null;
+  state.maxTimer = null;
+}
+
+async function push() {
+  const email = state.email;
+  if (!email || state.pushing || !state.dirty) return;
+
+  clearTimers();
+  state.dirty = false;
+  state.firstDirtyAt = 0;
+  state.pushing = true;
+  setStatus("saving");
+
+  try {
+    const payload = await readSnapshot();
+    const hash = await hashSnapshot(payload);
+    if (hash === state.lastHash) {
+      setStatus("saved", "Already up to date");
+      return;
+    }
+    const updatedAt = Date.now();
+    const response = await fetch("/api/sync", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload, updatedAt }),
+      keepalive: true,
+    });
+    if (!response.ok) throw new Error("Cloud save failed");
+    const result = (await response.json()) as {
+      ok?: boolean;
+      payload?: unknown;
+      updatedAt?: number;
+    };
+
+    if (result.ok === false && isSnapshot(result.payload)) {
+      await applySnapshot(result.payload);
+      writeTime(email, Number(result.updatedAt) || Date.now());
+      state.lastHash = await hashSnapshot(result.payload);
+      writeHash(email, state.lastHash);
+      setStatus("saved", "Updated from cloud");
+    } else {
+      writeTime(email, Number(result.updatedAt) || updatedAt);
+      state.lastHash = hash;
+      writeHash(email, hash);
+      setStatus("saved");
+    }
+  } catch {
+    state.dirty = true;
+    setStatus("error", "Cloud save failed");
+  } finally {
+    state.pushing = false;
+    if (state.dirty && state.email) {
+      state.timer = setTimeout(() => void push(), PUSH_DELAY);
+    }
+  }
+}
+
+function schedulePush() {
+  if (!state.email) return;
+  if (!state.dirty) state.firstDirtyAt = Date.now();
+  state.dirty = true;
+  writeTime(state.email, Date.now());
+  setStatus("pending");
+
+  if (state.timer) clearTimeout(state.timer);
+  state.timer = setTimeout(() => void push(), PUSH_DELAY);
+
+  if (!state.maxTimer) {
+    const wait = Math.max(0, MAX_WAIT - (Date.now() - state.firstDirtyAt));
+    state.maxTimer = setTimeout(() => void push(), wait);
+  }
+}
+
+async function pull(force = false) {
+  const email = state.email;
+  if (!email || state.pushing) return;
+  if (!force && Date.now() - state.lastPullAt < PULL_COOLDOWN) return;
+  state.lastPullAt = Date.now();
+
+  try {
+    const response = await fetch("/api/sync", { cache: "no-store" });
+    if (!response.ok) throw new Error("Cloud load failed");
+    const result = (await response.json()) as {
+      payload?: unknown;
+      updatedAt?: number;
+    };
+    const remoteAt = Number(result.updatedAt) || 0;
+    const localAt = readTime(email);
+
+    if (state.dirty) return;
+
+    if (isSnapshot(result.payload) && remoteAt > localAt) {
+      await applySnapshot(result.payload);
+      writeTime(email, remoteAt);
+      state.lastHash = await hashSnapshot(result.payload);
+      writeHash(email, state.lastHash);
+      setStatus("saved", "Restored from cloud");
+    } else if (!result.payload && localAt === 0 && hasData(await readSnapshot())) {
+      state.dirty = true;
+      await push();
+    } else if (remoteAt < localAt && hasData(await readSnapshot())) {
+      state.dirty = true;
+      await push();
+    }
+  } catch {
+    setStatus("error", "Cloud load failed");
+  }
+}
+
+async function setup(email: string | null) {
+  clearTimers();
+  const previous = window.localStorage.getItem(ACCOUNT_KEY);
+  if (previous && previous !== email) {
+    await clearLocalData();
+  }
+  if (!email) {
+    window.localStorage.removeItem(ACCOUNT_KEY);
+  } else {
+    window.localStorage.setItem(ACCOUNT_KEY, email);
+  }
+  state.email = email;
+  state.dirty = false;
+  state.firstDirtyAt = 0;
+  state.lastPullAt = 0;
+  state.lastHash = email ? readHash(email) : null;
+  state.pushing = false;
+
+  if (!email) {
+    setStatus("idle");
+    return;
+  }
+  await pull(true);
+}
+
+const CloudSync = () => {
+  useEffect(() => {
+    let mounted = true;
+    registerChangeHooks(schedulePush);
+
+    const onAuth = (event: Event) => {
+      const email = (event as CustomEvent<{ email?: string | null }>).detail?.email ?? null;
+      void setup(email);
+    };
+    const onVisibility = () => {
+      if (!state.email) return;
+      if (document.visibilityState === "hidden") {
+        if (state.dirty) void push();
+      } else {
+        void pull();
+      }
+    };
+    const onPageHide = () => {
+      if (state.dirty) void push();
+    };
+    const onForcePush = () => {
+      if (!state.email) return;
+      state.dirty = true;
+      void push();
+    };
+
+    window.addEventListener(AUTH_EVENT, onAuth);
+    window.addEventListener(SYNC_FORCE_EVENT, onForcePush);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+
+    void fetchAuthState()
+      .then((data) => {
+        if (mounted) void setup(data.email);
+      })
+      .catch(() => setStatus("error", "Cloud unavailable"));
+
+    return () => {
+      mounted = false;
+      window.removeEventListener(AUTH_EVENT, onAuth);
+      window.removeEventListener(SYNC_FORCE_EVENT, onForcePush);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      clearTimers();
+    };
+  }, []);
+
+  return null;
+};
+
+export default CloudSync;
