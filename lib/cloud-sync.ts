@@ -38,6 +38,7 @@ const TABLES = [
 
 let applyingRemote = false;
 let hooksRegistered = false;
+let changeListener: (() => void) | null = null;
 
 export function isSnapshot(value: unknown): value is Snapshot {
   if (!value || typeof value !== "object") return false;
@@ -133,7 +134,12 @@ export async function clearLocalData() {
   }
 }
 
+export function markLocalDirty() {
+  if (!applyingRemote) changeListener?.();
+}
+
 export function registerChangeHooks(onChange: () => void) {
+  changeListener = onChange;
   if (hooksRegistered) return;
   hooksRegistered = true;
   for (const name of TABLES) {
@@ -141,9 +147,7 @@ export function registerChangeHooks(onChange: () => void) {
       hook: (type: string, fn: () => void) => void;
     };
     for (const type of ["creating", "updating", "deleting"]) {
-      table.hook(type, () => {
-        if (!applyingRemote) onChange();
-      });
+      table.hook(type, () => markLocalDirty());
     }
   }
 }

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Cloud, CloudUpload, LogIn, LogOut, Menu, UserPlus, X } from "lucide-react";
+import { flushCloudSave } from "@/components/CloudSync";
 import { fetchAuthState, setAuthState } from "@/lib/auth-client";
 import { AUTH_EVENT, SYNC_FORCE_EVENT, SYNC_STATUS_EVENT } from "@/lib/cloud-sync";
 
@@ -88,6 +89,7 @@ const NavMenu = () => {
 
   const signOut = async () => {
     try {
+      await flushCloudSave();
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
       setAuthState({ email: null, configured: true });

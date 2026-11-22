@@ -80,6 +80,11 @@ function push() {
   return activePush;
 }
 
+export async function flushCloudSave() {
+  if (activePush) await activePush.catch(() => {});
+  if (state.email && state.dirty) await push();
+}
+
 async function runPush() {
   const email = state.email;
   if (!email || state.pushing || !state.dirty) return;
@@ -142,9 +147,12 @@ async function runPush() {
 }
 
 function schedulePush() {
-  if (!state.email) return;
   if (!state.dirty) state.firstDirtyAt = Date.now();
   state.dirty = true;
+  if (!state.email) {
+    setStatus("pending");
+    return;
+  }
   writeTime(state.email, Date.now());
   setStatus("pending");
 
@@ -199,6 +207,7 @@ async function pull(force = false) {
 }
 
 async function setup(email: string | null) {
+  const keepDirty = state.dirty;
   if (state.email && state.email !== email) {
     if (activePush) await activePush.catch(() => {});
     if (state.dirty && state.email) await push();
@@ -214,8 +223,8 @@ async function setup(email: string | null) {
     window.localStorage.setItem(ACCOUNT_KEY, email);
   }
   state.email = email;
-  state.dirty = false;
-  state.firstDirtyAt = 0;
+  state.dirty = keepDirty && !state.pushing;
+  state.firstDirtyAt = state.dirty ? Date.now() : 0;
   state.lastPullAt = 0;
   state.lastHash = email ? readHash(email) : null;
   state.pushing = false;
@@ -224,7 +233,8 @@ async function setup(email: string | null) {
     setStatus("idle");
     return;
   }
-  await pull(true);
+  if (state.dirty) await push();
+  else await pull(true);
 }
 
 const CloudSync = () => {

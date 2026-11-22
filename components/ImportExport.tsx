@@ -2,6 +2,7 @@
 
 import { CURRENCY, type CurrencyCode } from "@/currency";
 import { db, type Budget } from "@/db";
+import { markLocalDirty } from "@/lib/cloud-sync";
 import { ReportPdf } from "@/pdf";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Download, FileText, FileUp, X } from "lucide-react";
@@ -319,6 +320,7 @@ const ImportExport = ({
           }
         }
       );
+      markLocalDirty();
 
       setResult({
         expenses: expenseCount,

@@ -1,4 +1,5 @@
 import { db, type Recurrence, type RecurrenceDuration } from "@/db";
+import { markLocalDirty } from "@/lib/cloud-sync";
 
 export const RECURRENCE_DURATIONS: RecurrenceDuration[] = [
   "1 week",
@@ -134,6 +135,7 @@ export const syncRecurrences = async (): Promise<number> => {
       });
     }
   });
+  if (added > 0) markLocalDirty();
 
   return added;
 };
