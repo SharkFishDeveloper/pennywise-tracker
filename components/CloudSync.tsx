@@ -8,14 +8,17 @@ import {
   SYNC_STATUS_EVENT,
   applySnapshot,
   clearLocalData,
+  decodePayload,
+  encodePayload,
   hashSnapshot,
   hasData,
   isSnapshot,
   readSnapshot,
   registerChangeHooks,
+  supportsCompression,
 } from "@/lib/cloud-sync";
 
-const PUSH_DELAY = 10_000;
+const PUSH_DELAY = 5_000;
 const MAX_WAIT = 60_000;
 const PULL_COOLDOWN = 60_000;
 const ACCOUNT_KEY = "pennywise.cloud.account";
@@ -85,23 +88,30 @@ async function push() {
       return;
     }
     const updatedAt = Date.now();
+    const body = JSON.stringify({ ...(await encodePayload(payload)), updatedAt });
     const response = await fetch("/api/sync", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload, updatedAt }),
-      keepalive: true,
+      headers: {
+        "Content-Type": "application/json",
+        ...(supportsCompression() ? { "X-Sync-Gzip": "1" } : {}),
+      },
+      body,
+      keepalive: body.length < 60_000,
     });
     if (!response.ok) throw new Error("Cloud save failed");
     const result = (await response.json()) as {
       ok?: boolean;
       payload?: unknown;
+      compressed?: string;
       updatedAt?: number;
     };
 
-    if (result.ok === false && isSnapshot(result.payload)) {
-      await applySnapshot(result.payload);
+    if (result.ok === false) {
+      const remote = await decodePayload(result);
+      if (!isSnapshot(remote)) throw new Error("Invalid cloud snapshot");
+      await applySnapshot(remote);
       writeTime(email, Number(result.updatedAt) || Date.now());
-      state.lastHash = await hashSnapshot(result.payload);
+      state.lastHash = await hashSnapshot(remote);
       writeHash(email, state.lastHash);
       setStatus("saved", "Updated from cloud");
     } else {
@@ -144,24 +154,29 @@ async function pull(force = false) {
   state.lastPullAt = Date.now();
 
   try {
-    const response = await fetch("/api/sync", { cache: "no-store" });
+    const response = await fetch("/api/sync", {
+      cache: "no-store",
+      headers: supportsCompression() ? { "X-Sync-Gzip": "1" } : {},
+    });
     if (!response.ok) throw new Error("Cloud load failed");
     const result = (await response.json()) as {
       payload?: unknown;
+      compressed?: string;
       updatedAt?: number;
     };
+    const remote = await decodePayload(result);
     const remoteAt = Number(result.updatedAt) || 0;
     const localAt = readTime(email);
 
     if (state.dirty) return;
 
-    if (isSnapshot(result.payload) && remoteAt > localAt) {
-      await applySnapshot(result.payload);
+    if (isSnapshot(remote) && remoteAt > localAt) {
+      await applySnapshot(remote);
       writeTime(email, remoteAt);
-      state.lastHash = await hashSnapshot(result.payload);
+      state.lastHash = await hashSnapshot(remote);
       writeHash(email, state.lastHash);
       setStatus("saved", "Restored from cloud");
-    } else if (!result.payload && localAt === 0 && hasData(await readSnapshot())) {
+    } else if (!remote && localAt === 0 && hasData(await readSnapshot())) {
       state.dirty = true;
       await push();
     } else if (remoteAt < localAt && hasData(await readSnapshot())) {

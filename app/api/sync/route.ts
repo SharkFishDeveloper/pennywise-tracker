@@ -1,6 +1,10 @@
+import { gunzipSync, gzipSync } from "node:zlib";
 import { NextResponse, connection } from "next/server";
 import { currentUser } from "@/lib/auth";
 import { query, tursoConfigured } from "@/lib/turso";
+
+const COMPRESSED_LIMIT = 4_000_000;
+const PLAIN_LIMIT = 25_000_000;
 
 async function requireUser(request: Request) {
   if (!tursoConfigured()) return null;
@@ -12,10 +16,32 @@ async function requireUser(request: Request) {
   }
 }
 
+function wantsGzip(request: Request) {
+  return request.headers.get("x-sync-gzip") === "1";
+}
+
+function snapshotResponse(payload: unknown, updatedAt: number, gzip: boolean) {
+  if (!gzip || payload === null) return { payload, updatedAt };
+  const json = JSON.stringify(payload);
+  return {
+    compressed: gzipSync(Buffer.from(json, "utf8")).toString("base64"),
+    updatedAt,
+  };
+}
+
+function parseSnapshot(json: string) {
+  const value = JSON.parse(json) as unknown;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid snapshot");
+  }
+  return value;
+}
+
 export async function GET(request: Request) {
   await connection();
   const user = await requireUser(request);
   if (!user) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  const gzip = wantsGzip(request);
 
   try {
     const rows = await query(
@@ -23,11 +49,10 @@ export async function GET(request: Request) {
       [user.id],
     );
     const row = rows[0];
-    if (!row) return NextResponse.json({ payload: null, updatedAt: 0 });
-    return NextResponse.json({
-      payload: JSON.parse(String(row.payload)),
-      updatedAt: Number(row.updated_at),
-    });
+    if (!row) return NextResponse.json(snapshotResponse(null, 0, gzip));
+    return NextResponse.json(
+      snapshotResponse(parseSnapshot(String(row.payload)), Number(row.updated_at), gzip),
+    );
   } catch (error) {
     console.error("Sync read failed:", error);
     return NextResponse.json({ error: "Could not load the cloud snapshot." }, { status: 500 });
@@ -40,16 +65,30 @@ export async function PUT(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as {
     payload?: unknown;
+    compressed?: string;
     updatedAt?: unknown;
   };
-  if (!body.payload || typeof body.payload !== "object" || Array.isArray(body.payload)) {
+
+  let source: unknown = body.payload;
+  if (typeof body.compressed === "string") {
+    if (body.compressed.length > COMPRESSED_LIMIT) {
+      return NextResponse.json({ error: "Snapshot is too large." }, { status: 413 });
+    }
+    try {
+      source = parseSnapshot(gunzipSync(Buffer.from(body.compressed, "base64")).toString("utf8"));
+    } catch {
+      return NextResponse.json({ error: "Invalid compressed snapshot." }, { status: 400 });
+    }
+  }
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
     return NextResponse.json({ error: "Invalid snapshot." }, { status: 400 });
   }
+
   const updatedAt = typeof body.updatedAt === "number" && Number.isFinite(body.updatedAt)
     ? body.updatedAt
     : Date.now();
-  const payload = JSON.stringify(body.payload);
-  if (payload.length > 25_000_000) {
+  const payload = JSON.stringify(source);
+  if (payload.length > PLAIN_LIMIT) {
     return NextResponse.json({ error: "Snapshot is too large." }, { status: 413 });
   }
 
@@ -66,8 +105,7 @@ export async function PUT(request: Request) {
     if (current && updatedAt <= currentAt) {
       return NextResponse.json({
         ok: false,
-        payload: JSON.parse(String(current.payload)),
-        updatedAt: currentAt,
+        ...snapshotResponse(parseSnapshot(String(current.payload)), currentAt, wantsGzip(request)),
       });
     }
 

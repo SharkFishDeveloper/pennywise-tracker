@@ -155,3 +155,39 @@ export async function hashSnapshot(snapshot: Snapshot) {
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
+
+export function supportsCompression() {
+  return typeof CompressionStream !== "undefined" && typeof DecompressionStream !== "undefined";
+}
+
+export type EncodedPayload = { compressed: string } | { payload: Snapshot };
+
+function toBase64(bytes: Uint8Array) {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
+  }
+  return btoa(binary);
+}
+
+export async function encodePayload(snapshot: Snapshot): Promise<EncodedPayload> {
+  if (!supportsCompression()) return { payload: snapshot };
+  const json = JSON.stringify(snapshot);
+  const stream = new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"));
+  const buffer = await new Response(stream).arrayBuffer();
+  return { compressed: toBase64(new Uint8Array(buffer)) };
+}
+
+export async function decodePayload(result: unknown): Promise<unknown> {
+  if (!result || typeof result !== "object") return null;
+  const record = result as { compressed?: unknown; payload?: unknown };
+  if (typeof record.compressed === "string" && record.compressed) {
+    if (!supportsCompression()) throw new Error("Compression is not supported");
+    const binary = atob(record.compressed);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    const text = await new Response(stream).text();
+    return JSON.parse(text) as unknown;
+  }
+  return record.payload ?? null;
+}
