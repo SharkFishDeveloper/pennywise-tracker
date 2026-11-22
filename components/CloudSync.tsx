@@ -185,19 +185,21 @@ async function pull(force = false) {
     const remote = await decodePayload(result);
     const remoteAt = Number(result.updatedAt) || 0;
     const localAt = readTime(email);
+    const localSnapshot = await readSnapshot();
+    const localEmpty = !hasData(localSnapshot);
 
     if (state.dirty) return;
 
-    if (isSnapshot(remote) && remoteAt > localAt) {
+    if (isSnapshot(remote) && (remoteAt > localAt || localEmpty)) {
       await applySnapshot(remote);
       writeTime(email, remoteAt);
       state.lastHash = await hashSnapshot(remote);
       writeHash(email, state.lastHash);
       setStatus("saved", "Restored from cloud");
-    } else if (!remote && localAt === 0 && hasData(await readSnapshot())) {
+    } else if (!remote && localAt === 0 && hasData(localSnapshot)) {
       state.dirty = true;
       await push();
-    } else if (remoteAt < localAt && hasData(await readSnapshot())) {
+    } else if (remoteAt < localAt && hasData(localSnapshot)) {
       state.dirty = true;
       await push();
     }
