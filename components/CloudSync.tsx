@@ -70,7 +70,17 @@ function clearTimers() {
   state.maxTimer = null;
 }
 
-async function push() {
+let activePush: Promise<void> | null = null;
+
+function push() {
+  if (activePush) return activePush;
+  activePush = runPush().finally(() => {
+    activePush = null;
+  });
+  return activePush;
+}
+
+async function runPush() {
   const email = state.email;
   if (!email || state.pushing || !state.dirty) return;
 
@@ -189,6 +199,10 @@ async function pull(force = false) {
 }
 
 async function setup(email: string | null) {
+  if (state.email && state.email !== email) {
+    if (activePush) await activePush.catch(() => {});
+    if (state.dirty && state.email) await push();
+  }
   clearTimers();
   const previous = window.localStorage.getItem(ACCOUNT_KEY);
   if (previous && previous !== email) {
